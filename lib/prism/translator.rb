@@ -27,6 +27,7 @@ module Prism
       return :no_strings if result.changed_strings.empty?
 
       engine = build_engine
+      puts "Changed strings: #{JSON.pretty_generate(result.changed_strings)}"
       translations = translate_strings(engine, result.changed_strings)
 
       puts "Translations: #{JSON.pretty_generate(translations)}"
