@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-require "json"
-require "yaml"
+require 'json'
+require 'yaml'
 
 module Prism
   class LocaleFile
@@ -14,7 +14,7 @@ module Prism
 
     def self.target_path_for(source_path, target_locale)
       ext = File.extname(source_path)
-      base = File.basename(source_path, ext)
+      File.basename(source_path, ext)
       dir = File.dirname(source_path)
       File.join(dir, "#{target_locale}#{ext}")
     end
@@ -31,7 +31,7 @@ module Prism
     end
 
     def set_value(path, value)
-      keys = path.split(".")
+      keys = path.split('.')
       root = root_key ? (@data[root_key] ||= {}) : @data
       cursor = root
       keys[0..-2].each do |key|
@@ -54,9 +54,7 @@ module Prism
     def detect_root_key(data, locale_hint)
       return nil unless data.is_a?(Hash)
 
-      if locale_hint && data.key?(locale_hint) && data[locale_hint].is_a?(Hash)
-        return locale_hint
-      end
+      return locale_hint if locale_hint && data.key?(locale_hint) && data[locale_hint].is_a?(Hash)
 
       if data.keys.length == 1
         only_key = data.keys.first

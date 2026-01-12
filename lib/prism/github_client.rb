@@ -1,14 +1,14 @@
 # frozen_string_literal: true
 
-require "faraday"
-require "json"
+require 'faraday'
+require 'json'
 
 module Prism
   class GitHubClient
     def initialize(token:, repo_slug:, http_client: nil)
       @token = token
       @repo_slug = repo_slug
-      @http_client = http_client || Faraday.new(url: "https://api.github.com")
+      @http_client = http_client || Faraday.new(url: 'https://api.github.com')
     end
 
     def create_pull_request(head:, title:, body:, base: nil)
@@ -21,25 +21,25 @@ module Prism
       }
 
       response = @http_client.post("/repos/#{@repo_slug}/pulls", payload.to_json, headers)
-      ensure_success!(response, "create pull request")
+      ensure_success!(response, 'create pull request')
       JSON.parse(response.body)
     end
 
     def default_branch
       response = @http_client.get("/repos/#{@repo_slug}", nil, headers)
-      ensure_success!(response, "fetch default branch")
-      JSON.parse(response.body).fetch("default_branch")
+      ensure_success!(response, 'fetch default branch')
+      JSON.parse(response.body).fetch('default_branch')
     end
 
     def branch_head_sha(branch)
       response = @http_client.get("/repos/#{@repo_slug}/branches/#{branch}", nil, headers)
       ensure_success!(response, "fetch branch #{branch}")
-      JSON.parse(response.body).dig("commit", "sha")
+      JSON.parse(response.body).dig('commit', 'sha')
     end
 
     def pull_request_for_branch(branch)
-      owner = @repo_slug.split("/").first
-      response = @http_client.get("/repos/#{@repo_slug}/pulls", { head: "#{owner}:#{branch}", state: "open" }, headers)
+      owner = @repo_slug.split('/').first
+      response = @http_client.get("/repos/#{@repo_slug}/pulls", { head: "#{owner}:#{branch}", state: 'open' }, headers)
       ensure_success!(response, "fetch pull requests for #{branch}")
       JSON.parse(response.body).first
     end
@@ -48,9 +48,9 @@ module Prism
 
     def headers
       {
-        "Authorization" => "Bearer #{@token}",
-        "Content-Type" => "application/json",
-        "Accept" => "application/vnd.github+json"
+        'Authorization' => "Bearer #{@token}",
+        'Content-Type' => 'application/json',
+        'Accept' => 'application/vnd.github+json'
       }
     end
 
@@ -58,7 +58,7 @@ module Prism
       return if response.status.between?(200, 299)
 
       message = response.body.to_s.strip
-      details = message.empty? ? "no response body" : message
+      details = message.empty? ? 'no response body' : message
       raise "GitHub API failed to #{action} (status #{response.status}): #{details}"
     end
   end

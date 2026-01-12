@@ -9,7 +9,7 @@ module Prism
       end
 
       def get_translations(_text, _target_languages)
-        raise NotImplementedError, "Implement in subclass"
+        raise NotImplementedError, 'Implement in subclass'
       end
     end
   end

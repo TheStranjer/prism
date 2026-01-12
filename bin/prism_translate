@@ -1,35 +1,35 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require "optparse"
-require_relative "../lib/prism"
+require 'optparse'
+require_relative '../lib/prism'
 
 options = {
-  repo: ENV.fetch("GITHUB_REPOSITORY", nil),
-  commit: ENV.fetch("GITHUB_SHA", nil),
-  github_token: ENV.fetch("GITHUB_TOKEN", nil),
+  repo: ENV.fetch('GITHUB_REPOSITORY', nil),
+  commit: ENV.fetch('GITHUB_SHA', nil),
+  github_token: ENV.fetch('GITHUB_TOKEN', nil),
   retries: 5,
-  delivery_method: "pull_request",
+  delivery_method: 'pull_request',
   llm_commit_messages: false
 }
 
 parser = OptionParser.new do |opts|
-  opts.banner = "Usage: prism_translate [options]"
+  opts.banner = 'Usage: prism_translate [options]'
 
-  opts.on("--source-file PATH") { |v| options[:source_file] = v }
-  opts.on("--target-languages LANGS") { |v| options[:target_languages] = v }
-  opts.on("--source-repo REPO") { |v| options[:repo] = v }
-  opts.on("--source-commit SHA") { |v| options[:commit] = v }
-  opts.on("--author-name NAME") { |v| options[:author_name] = v }
-  opts.on("--author-email EMAIL") { |v| options[:author_email] = v }
-  opts.on("--engine NAME") { |v| options[:engine] = v }
-  opts.on("--api-token TOKEN") { |v| options[:api_token] = v }
-  opts.on("--model MODEL") { |v| options[:model] = v }
-  opts.on("--github-token TOKEN") { |v| options[:github_token] = v }
-  opts.on("--repo-slug SLUG") { |v| options[:repo] = v }
-  opts.on("--retries N", Integer) { |v| options[:retries] = v }
-  opts.on("--delivery-method MODE") { |v| options[:delivery_method] = v }
-  opts.on("--llm-commit-messages BOOL") { |v| options[:llm_commit_messages] = v.to_s.downcase == "true" }
+  opts.on('--source-file PATH') { |v| options[:source_file] = v }
+  opts.on('--target-languages LANGS') { |v| options[:target_languages] = v }
+  opts.on('--source-repo REPO') { |v| options[:repo] = v }
+  opts.on('--source-commit SHA') { |v| options[:commit] = v }
+  opts.on('--author-name NAME') { |v| options[:author_name] = v }
+  opts.on('--author-email EMAIL') { |v| options[:author_email] = v }
+  opts.on('--engine NAME') { |v| options[:engine] = v }
+  opts.on('--api-token TOKEN') { |v| options[:api_token] = v }
+  opts.on('--model MODEL') { |v| options[:model] = v }
+  opts.on('--github-token TOKEN') { |v| options[:github_token] = v }
+  opts.on('--repo-slug SLUG') { |v| options[:repo] = v }
+  opts.on('--retries N', Integer) { |v| options[:retries] = v }
+  opts.on('--delivery-method MODE') { |v| options[:delivery_method] = v }
+  opts.on('--llm-commit-messages BOOL') { |v| options[:llm_commit_messages] = v.to_s.downcase == 'true' }
 end
 
 parser.parse!
@@ -37,20 +37,20 @@ parser.parse!
 required = %i[source_file target_languages author_name author_email engine api_token model repo commit github_token]
 missing = required.select { |key| options[key].nil? || options[key].to_s.empty? }
 unless missing.empty?
-  warn "Missing required options: #{missing.join(", ") }"
+  warn "Missing required options: #{missing.join(', ')}"
   exit 1
 end
-if options[:retries].nil? || options[:retries] < 0
-  warn "Retries must be a non-negative integer"
+if options[:retries].nil? || options[:retries].negative?
+  warn 'Retries must be a non-negative integer'
   exit 1
 end
 delivery_method = options[:delivery_method].to_s.strip.downcase
 unless %w[pull_request push].include?(delivery_method)
-  warn "Delivery method must be pull_request or push"
+  warn 'Delivery method must be pull_request or push'
   exit 1
 end
 
-languages = options[:target_languages].split(",").map(&:strip).reject(&:empty?)
+languages = options[:target_languages].split(',').map(&:strip).reject(&:empty?)
 
 repo = Prism::GitRepo.new(Dir.pwd)
 translator = Prism::Translator.new(
@@ -73,15 +73,15 @@ translator = Prism::Translator.new(
 result = translator.run
 case result
 when :unchanged
-  puts "No changes detected in source locale file."
+  puts 'No changes detected in source locale file.'
 when :no_strings
-  puts "No translatable string changes detected."
+  puts 'No translatable string changes detected.'
 when :no_updates
-  puts "No translations applied."
+  puts 'No translations applied.'
 else
   if result == :pushed
-    puts "Translations applied and pushed to the current branch."
+    puts 'Translations applied and pushed to the current branch.'
   else
-    puts "Translations applied and PR created."
+    puts 'Translations applied and PR created.'
   end
 end

@@ -1,12 +1,13 @@
 # frozen_string_literal: true
 
-require "json"
-require "set"
-require "yaml"
+require 'json'
+require 'yaml'
 
 module Prism
   class Translator
-    def initialize(repo:, commit:, source_file:, target_languages:, engine:, api_token:, model:, author_name:, author_email:, github_token:, repo_slug:, retries: 5, delivery_method: "pull_request", llm_commit_messages: false)
+    def initialize(repo:, commit:, source_file:, target_languages:, engine:, api_token:, model:,
+                   author_name:, author_email:, github_token:, repo_slug:, retries: 5,
+                   delivery_method: 'pull_request', llm_commit_messages: false)
       @repo = repo
       @commit = commit
       @source_file = source_file
@@ -33,9 +34,7 @@ module Prism
       return :no_strings if requests.empty?
 
       puts "Changed strings: #{JSON.pretty_generate(result.changed_strings)}"
-      unless backfilled_keys.empty?
-        puts "Backfilled strings: #{JSON.pretty_generate(backfilled_keys.sort)}"
-      end
+      puts "Backfilled strings: #{JSON.pretty_generate(backfilled_keys.sort)}" unless backfilled_keys.empty?
 
       translations = translate_strings(engine, requests)
 
@@ -43,27 +42,29 @@ module Prism
 
       updated_paths = apply_translations(translations, result.source_locale_root)
       return :no_updates if updated_paths.empty?
+
       puts "Updated locale files: #{JSON.pretty_generate(updated_paths)}"
 
       delivery = delivery_method
-      branch = if delivery == "pull_request"
-                 "i18n/auto-translate-#{Time.now.utc.strftime("%Y%m%d%H%M%S")}"
+      branch = if delivery == 'pull_request'
+                 "i18n/auto-translate-#{Time.now.utc.strftime('%Y%m%d%H%M%S')}"
                else
                  @repo.current_branch
                end
-      if delivery == "push" && (branch.nil? || branch.empty? || branch == "HEAD")
-        raise "Cannot push translation commit because current branch is detached."
+      if delivery == 'push' && (branch.nil? || branch.empty? || branch == 'HEAD')
+        raise 'Cannot push translation commit because current branch is detached.'
       end
+
       @repo.set_identity(@author_name, @author_email)
-      @repo.checkout_new_branch(branch) if delivery == "pull_request"
+      @repo.checkout_new_branch(branch) if delivery == 'pull_request'
       @repo.add(updated_paths)
 
       staged_diff = @repo.staged_diff
-      raise "Failed to get staged diff" if staged_diff.nil?
+      raise 'Failed to get staged diff' if staged_diff.nil?
 
       commit_content = if @llm_commit_messages
                          source_commit_diff = @repo.show_commit(@commit)
-                         raise "Failed to get source commit diff" if source_commit_diff.nil?
+                         raise 'Failed to get source commit diff' if source_commit_diff.nil?
 
                          engine.generate_commit_content(
                            source_commit_diff: source_commit_diff,
@@ -76,53 +77,49 @@ module Prism
       puts "Generated commit content: #{JSON.pretty_generate(commit_content)}"
 
       before_head = @repo.head_sha
-      commit_output, commit_status = @repo.commit(commit_content["commit_message"])
-      unless commit_status.success?
-        raise "Failed to create commit: #{commit_output}"
-      end
+      commit_output, commit_status = @repo.commit(commit_content['commit_message'])
+      raise "Failed to create commit: #{commit_output}" unless commit_status.success?
 
       commit_sha = @repo.head_sha
       if commit_sha.nil? || commit_sha == before_head
         raise "Commit did not advance HEAD. Output: #{commit_output.strip}"
       end
 
-      expected_paths = updated_paths.map { |path| @repo.relative_path(path).sub(%r{\A\./}, "") }.uniq
+      expected_paths = updated_paths.map { |path| @repo.relative_path(path).sub(%r{\A\./}, '') }.uniq
       changed_files = @repo.changed_files(commit_sha)
       missing = expected_paths - changed_files
       extra = changed_files - expected_paths
       unless missing.empty?
-        raise "Commit #{commit_sha} missing expected file changes: #{missing.join(", ")}. Changed files: #{changed_files.join(", ")}"
+        raise "Commit #{commit_sha} missing expected file changes: #{missing.join(', ')}. " \
+              "Changed files: #{changed_files.join(', ')}"
       end
       unless extra.empty?
-        raise "Commit #{commit_sha} included unexpected files: #{extra.join(", ")}. Expected: #{expected_paths.join(", ")}"
+        raise "Commit #{commit_sha} included unexpected files: #{extra.join(', ')}. " \
+              "Expected: #{expected_paths.join(', ')}"
       end
 
       with_token_remote do |remote|
         push_output, push_status = @repo.push(branch, remote: remote)
-        unless push_status.success?
-          raise "Failed to push branch #{branch} to #{remote}: #{push_output}"
-        end
+        raise "Failed to push branch #{branch} to #{remote}: #{push_output}" unless push_status.success?
       end
 
-      return :pushed if delivery == "push"
+      return :pushed if delivery == 'push'
 
       client = GitHubClient.new(token: @github_token, repo_slug: @repo_slug)
       remote_head = client.branch_head_sha(branch)
       if remote_head.nil? || remote_head != commit_sha
-        raise "Remote branch #{branch} does not point to commit #{commit_sha}. Found: #{remote_head || "none"}"
+        raise "Remote branch #{branch} does not point to commit #{commit_sha}. Found: #{remote_head || 'none'}"
       end
 
       created_pr = client.create_pull_request(
         head: branch,
-        title: commit_content["pr_title"],
-        body: commit_content["pr_description"]
+        title: commit_content['pr_title'],
+        body: commit_content['pr_description']
       )
-      unless created_pr && created_pr["number"]
-        raise "Pull request creation did not return a PR number."
-      end
+      raise 'Pull request creation did not return a PR number.' unless created_pr && created_pr['number']
 
       existing_pr = client.pull_request_for_branch(branch)
-      unless existing_pr && existing_pr["number"] == created_pr["number"]
+      unless existing_pr && existing_pr['number'] == created_pr['number']
         raise "Pull request for branch #{branch} not found after creation."
       end
 
@@ -133,7 +130,7 @@ module Prism
 
     def build_engine
       case @engine_name.downcase
-      when "chatgpt"
+      when 'chatgpt'
         Engines::ChatGPT.new(api_token: @api_token, model: @model, retries: @retries)
       else
         raise ArgumentError, "Unknown engine: #{@engine_name}"
@@ -148,10 +145,10 @@ module Prism
     end
 
     def default_commit_content(delivery)
-      content = { "commit_message" => "Update translations" }
-      if delivery == "pull_request"
-        content["pr_title"] = "Update translations"
-        content["pr_description"] = "Automated translation updates."
+      content = { 'commit_message' => 'Update translations' }
+      if delivery == 'pull_request'
+        content['pr_title'] = 'Update translations'
+        content['pr_description'] = 'Automated translation updates.'
       end
       content
     end
@@ -166,8 +163,8 @@ module Prism
         next unless value.is_a?(String)
 
         result = engine.get_translations(value, locales)
-        result_translations = result["translations"] || {}
-        result_errors = result["errors"] || {}
+        result_translations = result['translations'] || {}
+        result_errors = result['errors'] || {}
 
         locales.each do |locale|
           translation = result_translations[locale]
@@ -176,7 +173,7 @@ module Prism
             next
           end
 
-          reason = result_errors[locale] || result_errors["_request"] || "no translation returned"
+          reason = result_errors[locale] || result_errors['_request'] || 'no translation returned'
           failures[key] ||= {}
           failures[key][locale] = reason
         end
@@ -184,7 +181,7 @@ module Prism
 
       unless failures.empty?
         puts "Translation failures: #{JSON.pretty_generate(failures)}"
-        raise "Translation failures detected"
+        raise 'Translation failures detected'
       end
 
       translations
@@ -196,7 +193,7 @@ module Prism
         next if locale == source_locale
 
         target_path = LocaleFile.target_path_for(@source_file, locale)
-        format = target_path.end_with?(".json") ? :json : :yaml
+        format = target_path.end_with?('.json') ? :json : :yaml
 
         data = if File.exist?(target_path)
                  content = File.read(target_path)
@@ -269,7 +266,7 @@ module Prism
       return {} unless File.exist?(path)
 
       content = File.read(path)
-      data = if path.end_with?(".json")
+      data = if path.end_with?('.json')
                JSON.parse(content)
              else
                YAML.safe_load(content, aliases: true) || {}
@@ -287,20 +284,20 @@ module Prism
     end
 
     def with_token_remote
-      remote = "origin"
-      url_output, status = @repo.capture("git remote get-url origin")
+      remote = 'origin'
+      url_output, status = @repo.capture('git remote get-url origin')
       return yield(remote) unless status.success?
 
       url = url_output.strip
-      if url.start_with?("https://")
-        token_url = url.sub("https://", "https://x-access-token:#{@github_token}@")
-        remote = "token"
+      if url.start_with?('https://')
+        token_url = url.sub('https://', "https://x-access-token:#{@github_token}@")
+        remote = 'token'
         @repo.capture("git remote add #{remote} #{token_url}")
       end
 
       yield(remote)
     ensure
-      @repo.capture("git remote remove token")
+      @repo.capture('git remote remove token')
     end
   end
 end

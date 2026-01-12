@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
-require "open3"
-require "pathname"
+require 'open3'
 
 module Prism
   class GitRepo
@@ -41,27 +40,27 @@ module Prism
     end
 
     def add(paths)
-      joined = paths.map { |path| shell_escape(path) }.join(" ")
+      joined = paths.map { |path| shell_escape(path) }.join(' ')
       capture("git add #{joined}")
     end
 
     def commit(message)
       # Use array form to bypass shell interpretation - this safely handles
       # messages with parentheses, quotes, backticks, and other special characters
-      Open3.capture2e("git", "commit", "-m", message, chdir: @path)
+      Open3.capture2e('git', 'commit', '-m', message, chdir: @path)
     end
 
-    def push(branch, remote: "origin")
+    def push(branch, remote: 'origin')
       capture("git push #{remote} #{branch}")
     end
 
     def current_branch
-      output, = capture("git rev-parse --abbrev-ref HEAD")
+      output, = capture('git rev-parse --abbrev-ref HEAD')
       output.strip
     end
 
     def head_sha
-      output, status = capture("git rev-parse HEAD")
+      output, status = capture('git rev-parse HEAD')
       return nil unless status.success?
 
       output.strip
@@ -75,7 +74,7 @@ module Prism
     end
 
     def staged_diff
-      output, status = capture("git diff --cached")
+      output, status = capture('git diff --cached')
       return nil unless status.success?
 
       output
@@ -91,7 +90,7 @@ module Prism
     def relative_path(path)
       absolute = Pathname.new(path).cleanpath
       base = Pathname.new(@path).cleanpath
-      return absolute.relative_path_from(base).to_s if absolute.to_s.start_with?(base.to_s + "/")
+      return absolute.relative_path_from(base).to_s if absolute.to_s.start_with?("#{base}/")
 
       path
     end

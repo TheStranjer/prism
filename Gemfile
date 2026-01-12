@@ -1,12 +1,14 @@
-source "https://rubygems.org"
+# frozen_string_literal: true
 
-gem 'i18n'
+source 'https://rubygems.org'
+
 gem 'faraday'
+gem 'i18n'
 
 group :test do
-  gem "rspec"
+  gem 'rspec'
 end
 
 group :development do
-  gem "rubocop"  
+  gem 'rubocop'
 end

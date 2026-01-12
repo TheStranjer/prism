@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-require "json"
-require "yaml"
+require 'json'
+require 'yaml'
 
 module Prism
   class DiffExaminer
@@ -27,7 +27,7 @@ module Prism
     end
 
     def changed_strings
-      old_content = @repo.git_show(@commit + "^", @source_file)
+      old_content = @repo.git_show("#{@commit}^", @source_file)
       new_content = @repo.git_show(@commit, @source_file)
 
       old_data = parse_content(old_content)
@@ -70,7 +70,7 @@ module Prism
     def parse_content(content)
       return {} if content.nil? || content.strip.empty?
 
-      if @source_file.end_with?(".json")
+      if @source_file.end_with?('.json')
         JSON.parse(content)
       else
         YAML.safe_load(content, aliases: true) || {}
