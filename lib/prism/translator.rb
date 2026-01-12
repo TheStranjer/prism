@@ -35,6 +35,7 @@ module Prism
 
       updated_paths = apply_translations(translations, result.source_locale_root)
       return :no_updates if updated_paths.empty?
+      puts "Updated locale files: #{JSON.pretty_generate(updated_paths)}"
 
       branch = "i18n/auto-translate-#{Time.now.utc.strftime("%Y%m%d%H%M%S")}"
       @repo.set_identity(@author_name, @author_email)
