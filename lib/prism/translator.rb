@@ -194,9 +194,15 @@ module Prism
         locale_file = LocaleFile.new(data, locale_hint: locale)
         locale_file = ensure_root(locale_file, locale, root_key)
 
+        existing_strings = locale_file.flattened_strings
+        has_changes = false
+
         values.each do |key, translation|
+          has_changes = true if existing_strings[key] != translation
           locale_file.set_value(key, translation)
         end
+
+        next unless has_changes
 
         serialized = locale_file.to_serialized(format)
         File.write(target_path, serialized)

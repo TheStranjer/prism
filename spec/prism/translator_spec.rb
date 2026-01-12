@@ -122,6 +122,29 @@ RSpec.describe Prism::Translator do
     end
   end
 
+  it "excludes files from updated_paths when translations match existing values" do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, "locales/en.json")
+      write_json(source_path, { "greeting" => "Hello", "title" => "App" })
+      write_json(File.join(dir, "locales/fr.json"), { "greeting" => "Bonjour", "title" => "Appli" })
+      write_json(File.join(dir, "locales/de.json"), { "greeting" => "Hallo", "title" => "Anwendung" })
+
+      translator = build_translator(source_file: source_path, target_languages: %w[fr de])
+      original_fr = File.read(File.join(dir, "locales/fr.json"))
+      original_de = File.read(File.join(dir, "locales/de.json"))
+
+      translations = {
+        "fr" => { "greeting" => "Bonjour", "title" => "Appli" },
+        "de" => { "greeting" => "Hallo", "title" => "App" }
+      }
+
+      updated_paths = translator.send(:apply_translations, translations, nil)
+
+      expect(updated_paths).to contain_exactly(File.join(dir, "locales/de.json"))
+      expect(File.read(File.join(dir, "locales/fr.json"))).to eq(original_fr)
+    end
+  end
+
   it "pushes directly to the current branch when delivery method is push" do
     Dir.mktmpdir do |dir|
       source_path = File.join(dir, "locales/en.json")
