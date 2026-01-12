@@ -10,25 +10,31 @@ inputs:
     required: true
   source_repo:
     description: "Repository slug (owner/name)."
-    required: true
+    required: false
+    default: ${{ github.repository }}
   source_commit:
     description: "Commit SHA to compare against its parent."
-    required: true
+    required: false
+    default: ${{ github.sha }}
   author_name:
     description: "Git author name for the translation commit."
-    required: true
+    required: false
+    default: "TheStranjer"
   author_email:
     description: "Git author email for the translation commit."
-    required: true
+    required: false
+    default: "thestranjer@protonmail.com"
   engine:
     description: "Translation engine name (e.g. ChatGPT)."
-    required: true
+    required: false
+    default: "ChatGPT"
   api_token:
     description: "API token for the translation engine."
     required: true
   model:
     description: "Model identifier for the translation engine."
-    required: true
+    required: false
+    default: "gpt-5-mini"
   retries:
     description: "Number of retry attempts when translations are incomplete."
     required: false

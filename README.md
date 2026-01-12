@@ -14,13 +14,13 @@ Auto-translate i18n JSON/YAML files when the source language changes. The action
 
 - `source_file` (required): Path to the source locale file (e.g. `src/locales/en.json`).
 - `target_languages` (required): Comma-separated list of target locales (e.g. `fr,es,de`).
-- `source_repo` (required): `owner/name` repository slug. Usually `${{ github.repository }}`.
-- `source_commit` (required): Commit SHA to compare against its parent. Usually `${{ github.sha }}`.
-- `author_name` (required): Git author name for the translation commit.
-- `author_email` (required): Git author email for the translation commit.
-- `engine` (required): Translation engine name (use `ChatGPT`).
+- `source_repo` (optional): `owner/name` repository slug (default: `${{ github.repository }}`).
+- `source_commit` (optional): Commit SHA to compare against its parent (default: `${{ github.sha }}`).
+- `author_name` (optional): Git author name for the translation commit (default: `TheStranjer`).
+- `author_email` (optional): Git author email for the translation commit (default: `thestranjer@protonmail.com`).
+- `engine` (optional): Translation engine name (default: `ChatGPT`).
 - `api_token` (required): API token for the translation engine.
-- `model` (required): Model identifier for the translation engine.
+- `model` (optional): Model identifier for the translation engine (default: `gpt-5-mini`).
 - `retries` (optional): Number of retry attempts when translations are incomplete (default: `5`). Use `0` to disable retries.
 - `github_token` (required): Token used to push the branch and open PRs.
 - `delivery_method` (optional): `pull_request` (default) or `push`. Use `push` to commit directly to the current branch.
@@ -50,16 +50,8 @@ jobs:
         with:
           source_file: "src/locales/en.json"
           target_languages: "fr,es,de"
-          source_repo: ${{ github.repository }}
-          source_commit: ${{ github.sha }}
-          author_name: "Prism Bot"
-          author_email: "prism-bot@example.com"
-          engine: "ChatGPT"
           api_token: ${{ secrets.OPENAI_API_KEY }}
-          model: "gpt-4o-mini"
-          retries: "5"
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          delivery_method: "pull_request"
 ```
 
 ## Notes
