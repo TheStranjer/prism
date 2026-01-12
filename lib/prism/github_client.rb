@@ -20,12 +20,28 @@ module Prism
         body: body
       }
 
-      @http_client.post("/repos/#{@repo_slug}/pulls", payload.to_json, headers)
+      response = @http_client.post("/repos/#{@repo_slug}/pulls", payload.to_json, headers)
+      ensure_success!(response, "create pull request")
+      JSON.parse(response.body)
     end
 
     def default_branch
       response = @http_client.get("/repos/#{@repo_slug}", nil, headers)
+      ensure_success!(response, "fetch default branch")
       JSON.parse(response.body).fetch("default_branch")
+    end
+
+    def branch_head_sha(branch)
+      response = @http_client.get("/repos/#{@repo_slug}/branches/#{branch}", nil, headers)
+      ensure_success!(response, "fetch branch #{branch}")
+      JSON.parse(response.body).dig("commit", "sha")
+    end
+
+    def pull_request_for_branch(branch)
+      owner = @repo_slug.split("/").first
+      response = @http_client.get("/repos/#{@repo_slug}/pulls", { head: "#{owner}:#{branch}", state: "open" }, headers)
+      ensure_success!(response, "fetch pull requests for #{branch}")
+      JSON.parse(response.body).first
     end
 
     private
@@ -36,6 +52,14 @@ module Prism
         "Content-Type" => "application/json",
         "Accept" => "application/vnd.github+json"
       }
+    end
+
+    def ensure_success!(response, action)
+      return if response.status.between?(200, 299)
+
+      message = response.body.to_s.strip
+      details = message.empty? ? "no response body" : message
+      raise "GitHub API failed to #{action} (status #{response.status}): #{details}"
     end
   end
 end

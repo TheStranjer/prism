@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "open3"
+require "pathname"
 
 module Prism
   class GitRepo
@@ -55,6 +56,28 @@ module Prism
     def current_branch
       output, = capture("git rev-parse --abbrev-ref HEAD")
       output.strip
+    end
+
+    def head_sha
+      output, status = capture("git rev-parse HEAD")
+      return nil unless status.success?
+
+      output.strip
+    end
+
+    def changed_files(commit)
+      output, status = capture("git diff --name-only #{commit}^ #{commit}")
+      return [] unless status.success?
+
+      output.split("\n").map(&:strip).reject(&:empty?)
+    end
+
+    def relative_path(path)
+      absolute = Pathname.new(path).cleanpath
+      base = Pathname.new(@path).cleanpath
+      return absolute.relative_path_from(base).to_s if absolute.to_s.start_with?(base.to_s + "/")
+
+      path
     end
 
     private

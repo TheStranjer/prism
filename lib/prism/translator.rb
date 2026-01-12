@@ -41,18 +41,54 @@ module Prism
       @repo.set_identity(@author_name, @author_email)
       @repo.checkout_new_branch(branch)
       @repo.add(updated_paths)
-      @repo.commit("chore(i18n): auto-translate updated strings")
+      before_head = @repo.head_sha
+      commit_output, commit_status = @repo.commit("chore(i18n): auto-translate updated strings")
+      unless commit_status.success?
+        raise "Failed to create commit: #{commit_output}"
+      end
+
+      commit_sha = @repo.head_sha
+      if commit_sha.nil? || commit_sha == before_head
+        raise "Commit did not advance HEAD. Output: #{commit_output.strip}"
+      end
+
+      expected_paths = updated_paths.map { |path| @repo.relative_path(path).sub(%r{\A\./}, "") }.uniq
+      changed_files = @repo.changed_files(commit_sha)
+      missing = expected_paths - changed_files
+      extra = changed_files - expected_paths
+      unless missing.empty?
+        raise "Commit #{commit_sha} missing expected file changes: #{missing.join(", ")}. Changed files: #{changed_files.join(", ")}"
+      end
+      unless extra.empty?
+        raise "Commit #{commit_sha} included unexpected files: #{extra.join(", ")}. Expected: #{expected_paths.join(", ")}"
+      end
 
       with_token_remote do |remote|
-        @repo.push(branch, remote: remote)
+        push_output, push_status = @repo.push(branch, remote: remote)
+        unless push_status.success?
+          raise "Failed to push branch #{branch} to #{remote}: #{push_output}"
+        end
       end
 
       client = GitHubClient.new(token: @github_token, repo_slug: @repo_slug)
-      client.create_pull_request(
+      remote_head = client.branch_head_sha(branch)
+      if remote_head.nil? || remote_head != commit_sha
+        raise "Remote branch #{branch} does not point to commit #{commit_sha}. Found: #{remote_head || "none"}"
+      end
+
+      created_pr = client.create_pull_request(
         head: branch,
         title: "Auto-translate i18n updates",
         body: "Automated translations for #{@source_file} (#{@commit})."
       )
+      unless created_pr && created_pr["number"]
+        raise "Pull request creation did not return a PR number."
+      end
+
+      existing_pr = client.pull_request_for_branch(branch)
+      unless existing_pr && existing_pr["number"] == created_pr["number"]
+        raise "Pull request for branch #{branch} not found after creation."
+      end
 
       :ok
     end
