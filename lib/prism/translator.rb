@@ -33,17 +33,17 @@ module Prism
       requests, backfilled_keys = build_translation_requests(result)
       return :no_strings if requests.empty?
 
-      puts "Changed strings: #{JSON.pretty_generate(result.changed_strings)}"
-      puts "Backfilled strings: #{JSON.pretty_generate(backfilled_keys.sort)}" unless backfilled_keys.empty?
+      Logging.log("Changed strings: #{JSON.pretty_generate(result.changed_strings)}")
+      Logging.log("Backfilled strings: #{JSON.pretty_generate(backfilled_keys.sort)}") unless backfilled_keys.empty?
 
       translations = translate_strings(engine, requests)
 
-      puts "Translations: #{JSON.pretty_generate(translations)}"
+      Logging.log("Translations: #{JSON.pretty_generate(translations)}")
 
       updated_paths = apply_translations(translations, result.source_locale_root)
       return :no_updates if updated_paths.empty?
 
-      puts "Updated locale files: #{JSON.pretty_generate(updated_paths)}"
+      Logging.log("Updated locale files: #{JSON.pretty_generate(updated_paths)}")
 
       delivery = delivery_method
       branch = if delivery == 'pull_request'
@@ -74,7 +74,7 @@ module Prism
                        else
                          default_commit_content(delivery)
                        end
-      puts "Generated commit content: #{JSON.pretty_generate(commit_content)}"
+      Logging.log("Generated commit content: #{JSON.pretty_generate(commit_content)}")
 
       before_head = @repo.head_sha
       commit_output, commit_status = @repo.commit(commit_content['commit_message'])
@@ -180,7 +180,7 @@ module Prism
       end
 
       unless failures.empty?
-        puts "Translation failures: #{JSON.pretty_generate(failures)}"
+        Logging.log("Translation failures: #{JSON.pretty_generate(failures)}")
         raise 'Translation failures detected'
       end
 
