@@ -8,7 +8,8 @@ options = {
   repo: ENV.fetch("GITHUB_REPOSITORY", nil),
   commit: ENV.fetch("GITHUB_SHA", nil),
   github_token: ENV.fetch("GITHUB_TOKEN", nil),
-  retries: 5
+  retries: 5,
+  delivery_method: "pull_request"
 }
 
 parser = OptionParser.new do |opts|
@@ -26,6 +27,7 @@ parser = OptionParser.new do |opts|
   opts.on("--github-token TOKEN") { |v| options[:github_token] = v }
   opts.on("--repo-slug SLUG") { |v| options[:repo] = v }
   opts.on("--retries N", Integer) { |v| options[:retries] = v }
+  opts.on("--delivery-method MODE") { |v| options[:delivery_method] = v }
 end
 
 parser.parse!
@@ -38,6 +40,11 @@ unless missing.empty?
 end
 if options[:retries].nil? || options[:retries] < 0
   warn "Retries must be a non-negative integer"
+  exit 1
+end
+delivery_method = options[:delivery_method].to_s.strip.downcase
+unless %w[pull_request push].include?(delivery_method)
+  warn "Delivery method must be pull_request or push"
   exit 1
 end
 
@@ -56,7 +63,8 @@ translator = Prism::Translator.new(
   author_email: options[:author_email],
   github_token: options[:github_token],
   repo_slug: options[:repo],
-  retries: options[:retries]
+  retries: options[:retries],
+  delivery_method: delivery_method
 )
 
 result = translator.run
@@ -68,5 +76,9 @@ when :no_strings
 when :no_updates
   puts "No translations applied."
 else
-  puts "Translations applied and PR created."
+  if result == :pushed
+    puts "Translations applied and pushed to the current branch."
+  else
+    puts "Translations applied and PR created."
+  end
 end

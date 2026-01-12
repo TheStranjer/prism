@@ -11,7 +11,7 @@ RSpec.describe Prism::Translator do
     File.write(path, JSON.pretty_generate(data))
   end
 
-  def build_translator(source_file:, target_languages:)
+  def build_translator(source_file:, target_languages:, delivery_method: "pull_request")
     described_class.new(
       repo: instance_double(Prism::GitRepo),
       commit: "sha",
@@ -23,7 +23,8 @@ RSpec.describe Prism::Translator do
       author_name: "Test",
       author_email: "test@example.com",
       github_token: "gh",
-      repo_slug: "org/repo"
+      repo_slug: "org/repo",
+      delivery_method: delivery_method
     )
   end
 
@@ -160,6 +161,87 @@ RSpec.describe Prism::Translator do
       expect(lines).to include("- None")
       expect(lines).to include("Modified fields:")
       expect(lines).to include("- greeting")
+    end
+  end
+
+  it "pushes directly to the current branch when delivery method is push" do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, "locales/en.json")
+      translator = build_translator(source_file: source_path, target_languages: ["fr"], delivery_method: "push")
+      repo = translator.instance_variable_get(:@repo)
+
+      diff = instance_double(Prism::DiffExaminer, unchanged?: false, changed_strings: Prism::DiffExaminer::Result.new(
+        changed_strings: { "greeting" => "Hello" },
+        source_locale_root: nil,
+        added_strings: {},
+        modified_strings: {},
+        source_strings: {}
+      ))
+      allow(Prism::DiffExaminer).to receive(:new).and_return(diff)
+
+      allow(translator).to receive(:build_engine).and_return(instance_double(Prism::Engines::ChatGPT))
+      allow(translator).to receive(:build_translation_requests).and_return([{ "greeting" => { value: "Hello", locales: ["fr"] } }, []])
+      allow(translator).to receive(:translate_strings).and_return({ "fr" => { "greeting" => "Bonjour" } })
+      allow(translator).to receive(:apply_translations).and_return([File.join(dir, "locales/fr.json")])
+      allow(translator).to receive(:with_token_remote).and_yield("origin")
+
+      allow(repo).to receive(:set_identity)
+      allow(repo).to receive(:current_branch).and_return("main")
+      allow(repo).to receive(:add)
+      allow(repo).to receive(:head_sha).and_return("old", "new")
+      allow(repo).to receive(:changed_files).and_return(["locales/fr.json"])
+      allow(repo).to receive(:relative_path).and_return("locales/fr.json")
+      allow(repo).to receive(:commit).and_return(["ok", instance_double(Process::Status, success?: true)])
+      expect(repo).not_to receive(:checkout_new_branch)
+      expect(repo).to receive(:push).with("main", remote: "origin").and_return(["ok", instance_double(Process::Status, success?: true)])
+      expect(Prism::GitHubClient).not_to receive(:new)
+
+      result = translator.run
+
+      expect(result).to eq(:pushed)
+    end
+  end
+
+  it "creates a pull request when delivery method is pull_request" do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, "locales/en.json")
+      translator = build_translator(source_file: source_path, target_languages: ["fr"], delivery_method: "pull_request")
+      repo = translator.instance_variable_get(:@repo)
+
+      diff = instance_double(Prism::DiffExaminer, unchanged?: false, changed_strings: Prism::DiffExaminer::Result.new(
+        changed_strings: { "greeting" => "Hello" },
+        source_locale_root: nil,
+        added_strings: {},
+        modified_strings: {},
+        source_strings: {}
+      ))
+      allow(Prism::DiffExaminer).to receive(:new).and_return(diff)
+
+      allow(translator).to receive(:build_engine).and_return(instance_double(Prism::Engines::ChatGPT))
+      allow(translator).to receive(:build_translation_requests).and_return([{ "greeting" => { value: "Hello", locales: ["fr"] } }, []])
+      allow(translator).to receive(:translate_strings).and_return({ "fr" => { "greeting" => "Bonjour" } })
+      allow(translator).to receive(:apply_translations).and_return([File.join(dir, "locales/fr.json")])
+      allow(translator).to receive(:with_token_remote).and_yield("origin")
+
+      allow(repo).to receive(:set_identity)
+      allow(repo).to receive(:add)
+      allow(repo).to receive(:head_sha).and_return("old", "new")
+      allow(repo).to receive(:changed_files).and_return(["locales/fr.json"])
+      allow(repo).to receive(:relative_path).and_return("locales/fr.json")
+      allow(repo).to receive(:commit).and_return(["ok", instance_double(Process::Status, success?: true)])
+      expect(repo).to receive(:checkout_new_branch).with(a_string_matching(/\Ai18n\/auto-translate-\d{14}\z/))
+      expect(repo).to receive(:push).with(a_string_matching(/\Ai18n\/auto-translate-\d{14}\z/), remote: "origin")
+        .and_return(["ok", instance_double(Process::Status, success?: true)])
+
+      client = instance_double(Prism::GitHubClient)
+      expect(Prism::GitHubClient).to receive(:new).with(token: "gh", repo_slug: "org/repo").and_return(client)
+      allow(client).to receive(:branch_head_sha).and_return("new")
+      allow(client).to receive(:create_pull_request).and_return({ "number" => 12 })
+      allow(client).to receive(:pull_request_for_branch).and_return({ "number" => 12 })
+
+      result = translator.run
+
+      expect(result).to eq(:ok)
     end
   end
 end

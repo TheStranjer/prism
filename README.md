@@ -1,6 +1,6 @@
 # Prism Auto-Translate Action
 
-Auto-translate i18n JSON/YAML files when the source language changes. The action inspects the diff for the source locale file, translates changed keys, backfills missing keys in target locales, updates the target locale files, and opens a pull request.
+Auto-translate i18n JSON/YAML files when the source language changes. The action inspects the diff for the source locale file, translates changed keys, backfills missing keys in target locales, updates the target locale files, and delivers the changes via a pull request or direct push.
 
 ## What it does
 
@@ -8,7 +8,7 @@ Auto-translate i18n JSON/YAML files when the source language changes. The action
 2. Extracts changed keys and their updated strings.
 3. Sends each updated string to the configured engine (ChatGPT today).
 4. Updates target locale files (JSON or YAML, with or without root locale).
-5. Creates a pull request with the translated changes.
+5. Creates a pull request with the translated changes (or pushes directly if configured).
 
 ## Inputs
 
@@ -23,6 +23,7 @@ Auto-translate i18n JSON/YAML files when the source language changes. The action
 - `model` (required): Model identifier for the translation engine.
 - `retries` (optional): Number of retry attempts when translations are incomplete (default: `5`). Use `0` to disable retries.
 - `github_token` (required): Token used to push the branch and open PRs.
+- `delivery_method` (optional): `pull_request` (default) or `push`. Use `push` to commit directly to the current branch.
 
 ## Example workflow
 
@@ -58,9 +59,12 @@ jobs:
           model: "gpt-4o-mini"
           retries: "5"
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          delivery_method: "pull_request"
 ```
 
 ## Notes
 
 - The action expects the repo to be checked out with full history (`fetch-depth: 0`) so it can inspect diffs.
 - Target locale files are inferred by swapping the source locale filename (e.g. `en.json` -> `fr.json`).
+- For `delivery_method: pull_request`, grant `pull-requests: write`; for `push`, `contents: write` is sufficient.
+- For `delivery_method: push`, check out a branch ref (not a detached HEAD) so the commit has a branch to land on.

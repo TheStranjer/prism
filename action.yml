@@ -36,6 +36,10 @@ inputs:
   github_token:
     description: "GitHub token used to push and open PRs."
     required: true
+  delivery_method:
+    description: "How to deliver changes: pull_request or push."
+    required: false
+    default: "pull_request"
 runs:
   using: "composite"
   steps:
@@ -62,7 +66,8 @@ runs:
           --api-token "${{ inputs.api_token }}" \
           --model "${{ inputs.model }}" \
           --retries "${{ inputs.retries }}" \
-          --github-token "${{ inputs.github_token }}"
+          --github-token "${{ inputs.github_token }}" \
+          --delivery-method "${{ inputs.delivery_method }}"
       working-directory: ${{ github.workspace }}
       env:
         BUNDLE_GEMFILE: ${{ github.action_path }}/Gemfile

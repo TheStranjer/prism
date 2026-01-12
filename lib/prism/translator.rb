@@ -6,7 +6,7 @@ require "yaml"
 
 module Prism
   class Translator
-    def initialize(repo:, commit:, source_file:, target_languages:, engine:, api_token:, model:, author_name:, author_email:, github_token:, repo_slug:, retries: 5)
+    def initialize(repo:, commit:, source_file:, target_languages:, engine:, api_token:, model:, author_name:, author_email:, github_token:, repo_slug:, retries: 5, delivery_method: "pull_request")
       @repo = repo
       @commit = commit
       @source_file = source_file
@@ -19,6 +19,7 @@ module Prism
       @github_token = github_token
       @repo_slug = repo_slug
       @retries = retries
+      @delivery_method = delivery_method
     end
 
     def run
@@ -43,9 +44,17 @@ module Prism
       return :no_updates if updated_paths.empty?
       puts "Updated locale files: #{JSON.pretty_generate(updated_paths)}"
 
-      branch = "i18n/auto-translate-#{Time.now.utc.strftime("%Y%m%d%H%M%S")}"
+      delivery = delivery_method
+      branch = if delivery == "pull_request"
+                 "i18n/auto-translate-#{Time.now.utc.strftime("%Y%m%d%H%M%S")}"
+               else
+                 @repo.current_branch
+               end
+      if delivery == "push" && (branch.nil? || branch.empty? || branch == "HEAD")
+        raise "Cannot push translation commit because current branch is detached."
+      end
       @repo.set_identity(@author_name, @author_email)
-      @repo.checkout_new_branch(branch)
+      @repo.checkout_new_branch(branch) if delivery == "pull_request"
       @repo.add(updated_paths)
       before_head = @repo.head_sha
       commit_output, commit_status = @repo.commit("chore(i18n): auto-translate updated strings")
@@ -75,6 +84,8 @@ module Prism
           raise "Failed to push branch #{branch} to #{remote}: #{push_output}"
         end
       end
+
+      return :pushed if delivery == "push"
 
       client = GitHubClient.new(token: @github_token, repo_slug: @repo_slug)
       remote_head = client.branch_head_sha(branch)
@@ -109,6 +120,13 @@ module Prism
       else
         raise ArgumentError, "Unknown engine: #{@engine_name}"
       end
+    end
+
+    def delivery_method
+      normalized = @delivery_method.to_s.strip.downcase
+      return normalized if %w[pull_request push].include?(normalized)
+
+      raise ArgumentError, "Unknown delivery method: #{@delivery_method}"
     end
 
     def translate_strings(engine, requests)
