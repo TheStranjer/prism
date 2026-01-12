@@ -29,6 +29,8 @@ module Prism
       engine = build_engine
       translations = translate_strings(engine, result.changed_strings)
 
+      puts "Translations: #{JSON.pretty_generate(translations)}"
+
       updated_paths = apply_translations(translations, result.source_locale_root)
       return :no_updates if updated_paths.empty?
 
