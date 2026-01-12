@@ -98,6 +98,50 @@ RSpec.describe Prism::Translator do
     end
   end
 
+  it "skips source locale when building translation requests" do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, "locales/en.json")
+      write_json(source_path, { "greeting" => "Hello", "title" => "App" })
+      write_json(File.join(dir, "locales/fr.json"), { "greeting" => "Bonjour" })
+
+      translator = build_translator(source_file: source_path, target_languages: %w[en fr])
+      result = Prism::DiffExaminer::Result.new(
+        changed_strings: { "greeting" => "Hello" },
+        source_locale_root: nil,
+        added_strings: {},
+        modified_strings: { "greeting" => "Hello" },
+        source_strings: { "greeting" => "Hello", "title" => "App" }
+      )
+
+      requests, backfilled = translator.send(:build_translation_requests, result)
+
+      expect(requests.keys).to contain_exactly("greeting", "title")
+      expect(requests["greeting"][:locales]).to eq(["fr"])
+      expect(requests["title"][:locales]).to eq(["fr"])
+      expect(backfilled).to contain_exactly("title")
+    end
+  end
+
+  it "does not write translations back into the source locale file" do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, "locales/en.json")
+      write_json(source_path, { "greeting" => "Hello" })
+      write_json(File.join(dir, "locales/fr.json"), { "greeting" => "Bonjour" })
+
+      translator = build_translator(source_file: source_path, target_languages: %w[en fr])
+      original_source = File.read(source_path)
+      translations = {
+        "en" => { "greeting" => "Hi" },
+        "fr" => { "greeting" => "Salut" }
+      }
+
+      updated_paths = translator.send(:apply_translations, translations, nil)
+
+      expect(updated_paths).to contain_exactly(File.join(dir, "locales/fr.json"))
+      expect(File.read(source_path)).to eq(original_source)
+    end
+  end
+
   it "excludes modified keys from added list in PR body" do
     Dir.mktmpdir do |dir|
       translator = build_translator(source_file: File.join(dir, "locales/en.json"), target_languages: ["fr"])

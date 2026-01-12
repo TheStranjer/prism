@@ -148,6 +148,8 @@ module Prism
     def apply_translations(translations, root_key)
       updated_paths = []
       translations.each do |locale, values|
+        next if locale == source_locale
+
         target_path = LocaleFile.target_path_for(@source_file, locale)
         format = target_path.end_with?(".json") ? :json : :yaml
 
@@ -186,7 +188,7 @@ module Prism
       changed_keys = Set.new(changed_strings.keys)
       missing_locales_by_key = Hash.new { |hash, key| hash[key] = [] }
 
-      @target_languages.each do |locale|
+      target_locales.each do |locale|
         target_path = LocaleFile.target_path_for(@source_file, locale)
         target_strings = load_flattened_strings(target_path, locale)
         source_strings.each_key do |key|
@@ -199,7 +201,7 @@ module Prism
 
       requests = {}
       changed_strings.each do |key, value|
-        requests[key] = { value: value, locales: @target_languages }
+        requests[key] = { value: value, locales: target_locales }
       end
 
       missing_locales_by_key.each do |key, locales|
@@ -223,6 +225,14 @@ module Prism
              end
 
       LocaleFile.new(data, locale_hint: locale).flattened_strings
+    end
+
+    def source_locale
+      @source_locale ||= LocaleFile.locale_from_path(@source_file)
+    end
+
+    def target_locales
+      @target_locales ||= @target_languages.reject { |locale| locale == source_locale }
     end
 
     def pull_request_body(result, backfilled_keys)
