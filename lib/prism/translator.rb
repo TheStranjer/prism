@@ -92,6 +92,7 @@ module Prism
 
       unless failures.empty?
         puts "Translation failures: #{JSON.pretty_generate(failures)}"
+        raise "Translation failures detected"
       end
 
       translations
