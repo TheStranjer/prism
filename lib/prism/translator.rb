@@ -68,14 +68,30 @@ module Prism
 
     def translate_strings(engine, changed_strings)
       translations = Hash.new { |hash, key| hash[key] = {} }
+      failures = {}
 
       changed_strings.each do |key, value|
         next unless value.is_a?(String)
 
         result = engine.get_translations(value, @target_languages)
-        (result["translations"] || {}).each do |locale, translation|
-          translations[locale][key] = translation
+        result_translations = result["translations"] || {}
+        result_errors = result["errors"] || {}
+
+        @target_languages.each do |locale|
+          translation = result_translations[locale]
+          if translation.is_a?(String) && !translation.strip.empty?
+            translations[locale][key] = translation
+            next
+          end
+
+          reason = result_errors[locale] || result_errors["_request"] || "no translation returned"
+          failures[key] ||= {}
+          failures[key][locale] = reason
         end
+      end
+
+      unless failures.empty?
+        puts "Translation failures: #{JSON.pretty_generate(failures)}"
       end
 
       translations

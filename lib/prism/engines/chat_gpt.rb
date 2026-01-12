@@ -16,10 +16,22 @@ module Prism
       def get_translations(text, target_languages)
         payload = build_payload(text, target_languages)
         response = @http_client.post(OPENAI_URL, payload.to_json, headers)
+        return error_payload("HTTP #{response.status}: #{response.body}") unless response.success?
+
         body = JSON.parse(response.body)
-        tool_call = body.dig("choices", 0, "message", "tool_calls", 0)
-        arguments = tool_call.dig("function", "arguments")
-        JSON.parse(arguments)
+        puts "Response body: #{JSON.pretty_generate(body)}"
+        message = body.dig("choices", 0, "message") || {}
+        arguments = tool_arguments_from(message)
+        return error_payload("No tool call or JSON content in response") unless arguments
+
+        parsed = JSON.parse(arguments)
+        return error_payload("Tool call arguments are not a JSON object") unless parsed.is_a?(Hash)
+
+        parsed
+      rescue JSON::ParserError => e
+        error_payload("Invalid JSON in tool call arguments: #{e.message}")
+      rescue StandardError => e
+        error_payload("Unexpected error parsing translation response: #{e.message}")
       end
 
       private
@@ -50,7 +62,9 @@ module Prism
       end
 
       def system_prompt(target_languages)
-        "You translate i18n strings. Translate the user message into: #{target_languages.join(", ")}."
+        "You translate i18n strings. Translate the user message into each of: #{target_languages.join(", ")}. " \
+          "Return translations for every locale using those exact locale keys. " \
+          "If a locale cannot be translated, include an error message for that locale."
       end
 
       def translation_tool
@@ -58,11 +72,15 @@ module Prism
           type: "function",
           function: {
             name: "translations",
-            description: "Return translations keyed by target locale.",
+            description: "Return translations keyed by target locale, and optional per-locale errors.",
             parameters: {
               type: "object",
               properties: {
                 translations: {
+                  type: "object",
+                  additionalProperties: { type: "string" }
+                },
+                errors: {
                   type: "object",
                   additionalProperties: { type: "string" }
                 }
@@ -71,6 +89,25 @@ module Prism
             }
           }
         }
+      end
+
+      def tool_arguments_from(message)
+        tool_call = message["tool_calls"]&.first
+        arguments = tool_call&.dig("function", "arguments")
+        return arguments if arguments
+
+        function_call = message["function_call"]
+        arguments = function_call&.dig("arguments")
+        return arguments if arguments
+
+        content = message["content"]
+        return content if content && content.strip.start_with?("{")
+
+        nil
+      end
+
+      def error_payload(message)
+        { "translations" => {}, "errors" => { "_request" => message } }
       end
     end
   end
