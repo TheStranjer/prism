@@ -8,7 +8,8 @@ Auto-translate i18n JSON/YAML files when the source language changes. The action
 2. Extracts changed keys and their updated strings.
 3. Sends each updated string to the configured engine (ChatGPT today).
 4. Updates target locale files (JSON or YAML, with or without root locale).
-5. Creates a pull request with the translated changes (or pushes directly if configured).
+5. Generates a commit message (and PR title/description if using `pull_request` delivery) using the LLM based on the staged changes.
+6. Creates a pull request with the translated changes (or pushes directly if configured).
 
 ## Inputs
 
@@ -60,3 +61,34 @@ jobs:
 - Target locale files are inferred by swapping the source locale filename (e.g. `en.json` -> `fr.json`).
 - For `delivery_method: pull_request`, grant `pull-requests: write`; for `push`, `contents: write` is sufficient.
 - For `delivery_method: push`, check out a branch ref (not a detached HEAD) so the commit has a branch to land on.
+
+## LLM-Generated Commit Messages
+
+After translating strings and staging the changes, the action calls the LLM to generate meaningful commit messages. The LLM receives two pieces of context:
+
+1. **The original commit** (via `git show <sha>`) - shows what changed in the source locale file that triggered the translation
+2. **The staged translation changes** (via `git diff --cached`) - shows the translations that will be committed
+
+This allows the LLM to understand both the intent of the original change and the resulting translations, enabling it to generate descriptive, context-aware messages.
+
+### Push Mode
+
+When `delivery_method: push`, the LLM generates a commit message using a tool that returns:
+
+```json
+{
+  "commit_message": "Add French and German translations for new greeting strings"
+}
+```
+
+### Pull Request Mode
+
+When `delivery_method: pull_request`, the LLM generates both a commit message and PR metadata using a tool that returns:
+
+```json
+{
+  "commit_message": "Add translations for updated welcome message",
+  "pr_title": "Update translations for welcome message changes",
+  "pr_description": "This PR adds French, Spanish, and German translations for the updated welcome message. The source text was changed from 'Hello' to 'Welcome back' and all target locales have been updated accordingly."
+}
+```

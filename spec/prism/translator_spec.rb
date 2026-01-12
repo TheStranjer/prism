@@ -78,27 +78,6 @@ RSpec.describe Prism::Translator do
     end
   end
 
-  it "formats PR body with added and modified fields separated" do
-    Dir.mktmpdir do |dir|
-      translator = build_translator(source_file: File.join(dir, "locales/en.json"), target_languages: ["fr"])
-      result = Prism::DiffExaminer::Result.new(
-        changed_strings: { "greeting" => "Hi", "title" => "App" },
-        source_locale_root: nil,
-        added_strings: { "title" => "App" },
-        modified_strings: { "greeting" => "Hi" },
-        source_strings: {}
-      )
-
-      body = translator.send(:pull_request_body, result, ["subtitle"])
-      lines = body.split("\n")
-
-      expect(lines).to include("Added fields:")
-      expect(lines).to include("- subtitle", "- title")
-      expect(lines).to include("Modified fields:")
-      expect(lines).to include("- greeting")
-    end
-  end
-
   it "skips source locale when building translation requests" do
     Dir.mktmpdir do |dir|
       source_path = File.join(dir, "locales/en.json")
@@ -143,27 +122,6 @@ RSpec.describe Prism::Translator do
     end
   end
 
-  it "excludes modified keys from added list in PR body" do
-    Dir.mktmpdir do |dir|
-      translator = build_translator(source_file: File.join(dir, "locales/en.json"), target_languages: ["fr"])
-      result = Prism::DiffExaminer::Result.new(
-        changed_strings: { "greeting" => "Hi" },
-        source_locale_root: nil,
-        added_strings: { "greeting" => "Hi" },
-        modified_strings: { "greeting" => "Hi" },
-        source_strings: {}
-      )
-
-      body = translator.send(:pull_request_body, result, ["greeting"])
-      lines = body.split("\n")
-
-      expect(lines).to include("Added fields:")
-      expect(lines).to include("- None")
-      expect(lines).to include("Modified fields:")
-      expect(lines).to include("- greeting")
-    end
-  end
-
   it "pushes directly to the current branch when delivery method is push" do
     Dir.mktmpdir do |dir|
       source_path = File.join(dir, "locales/en.json")
@@ -179,7 +137,15 @@ RSpec.describe Prism::Translator do
       ))
       allow(Prism::DiffExaminer).to receive(:new).and_return(diff)
 
-      allow(translator).to receive(:build_engine).and_return(instance_double(Prism::Engines::ChatGPT))
+      engine = instance_double(Prism::Engines::ChatGPT)
+      allow(engine).to receive(:generate_commit_content).with(
+        source_commit_diff: "commit sha\n\nOriginal changes",
+        staged_diff: "diff --git a/locales/fr.json",
+        delivery_method: "push"
+      ).and_return({
+        "commit_message" => "Add French translations for greeting"
+      })
+      allow(translator).to receive(:build_engine).and_return(engine)
       allow(translator).to receive(:build_translation_requests).and_return([{ "greeting" => { value: "Hello", locales: ["fr"] } }, []])
       allow(translator).to receive(:translate_strings).and_return({ "fr" => { "greeting" => "Bonjour" } })
       allow(translator).to receive(:apply_translations).and_return([File.join(dir, "locales/fr.json")])
@@ -188,10 +154,12 @@ RSpec.describe Prism::Translator do
       allow(repo).to receive(:set_identity)
       allow(repo).to receive(:current_branch).and_return("main")
       allow(repo).to receive(:add)
+      allow(repo).to receive(:staged_diff).and_return("diff --git a/locales/fr.json")
+      allow(repo).to receive(:show_commit).with("sha").and_return("commit sha\n\nOriginal changes")
       allow(repo).to receive(:head_sha).and_return("old", "new")
       allow(repo).to receive(:changed_files).and_return(["locales/fr.json"])
       allow(repo).to receive(:relative_path).and_return("locales/fr.json")
-      allow(repo).to receive(:commit).and_return(["ok", instance_double(Process::Status, success?: true)])
+      allow(repo).to receive(:commit).with("Add French translations for greeting").and_return(["ok", instance_double(Process::Status, success?: true)])
       expect(repo).not_to receive(:checkout_new_branch)
       expect(repo).to receive(:push).with("main", remote: "origin").and_return(["ok", instance_double(Process::Status, success?: true)])
       expect(Prism::GitHubClient).not_to receive(:new)
@@ -217,7 +185,17 @@ RSpec.describe Prism::Translator do
       ))
       allow(Prism::DiffExaminer).to receive(:new).and_return(diff)
 
-      allow(translator).to receive(:build_engine).and_return(instance_double(Prism::Engines::ChatGPT))
+      engine = instance_double(Prism::Engines::ChatGPT)
+      allow(engine).to receive(:generate_commit_content).with(
+        source_commit_diff: "commit sha\n\nOriginal changes",
+        staged_diff: "diff --git a/locales/fr.json",
+        delivery_method: "pull_request"
+      ).and_return({
+        "commit_message" => "Add French translations for greeting",
+        "pr_title" => "Update translations for greeting changes",
+        "pr_description" => "This PR adds French translations for the greeting field."
+      })
+      allow(translator).to receive(:build_engine).and_return(engine)
       allow(translator).to receive(:build_translation_requests).and_return([{ "greeting" => { value: "Hello", locales: ["fr"] } }, []])
       allow(translator).to receive(:translate_strings).and_return({ "fr" => { "greeting" => "Bonjour" } })
       allow(translator).to receive(:apply_translations).and_return([File.join(dir, "locales/fr.json")])
@@ -225,10 +203,12 @@ RSpec.describe Prism::Translator do
 
       allow(repo).to receive(:set_identity)
       allow(repo).to receive(:add)
+      allow(repo).to receive(:staged_diff).and_return("diff --git a/locales/fr.json")
+      allow(repo).to receive(:show_commit).with("sha").and_return("commit sha\n\nOriginal changes")
       allow(repo).to receive(:head_sha).and_return("old", "new")
       allow(repo).to receive(:changed_files).and_return(["locales/fr.json"])
       allow(repo).to receive(:relative_path).and_return("locales/fr.json")
-      allow(repo).to receive(:commit).and_return(["ok", instance_double(Process::Status, success?: true)])
+      allow(repo).to receive(:commit).with("Add French translations for greeting").and_return(["ok", instance_double(Process::Status, success?: true)])
       expect(repo).to receive(:checkout_new_branch).with(a_string_matching(/\Ai18n\/auto-translate-\d{14}\z/))
       expect(repo).to receive(:push).with(a_string_matching(/\Ai18n\/auto-translate-\d{14}\z/), remote: "origin")
         .and_return(["ok", instance_double(Process::Status, success?: true)])
@@ -236,7 +216,11 @@ RSpec.describe Prism::Translator do
       client = instance_double(Prism::GitHubClient)
       expect(Prism::GitHubClient).to receive(:new).with(token: "gh", repo_slug: "org/repo").and_return(client)
       allow(client).to receive(:branch_head_sha).and_return("new")
-      allow(client).to receive(:create_pull_request).and_return({ "number" => 12 })
+      expect(client).to receive(:create_pull_request).with(
+        head: a_string_matching(/\Ai18n\/auto-translate-\d{14}\z/),
+        title: "Update translations for greeting changes",
+        body: "This PR adds French translations for the greeting field."
+      ).and_return({ "number" => 12 })
       allow(client).to receive(:pull_request_for_branch).and_return({ "number" => 12 })
 
       result = translator.run

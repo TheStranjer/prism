@@ -55,6 +55,39 @@ module Prism
         error_payload("Unexpected error parsing translation response: #{e.message}")
       end
 
+      def generate_commit_content(source_commit_diff:, staged_diff:, delivery_method:)
+        tool = commit_tool(delivery_method)
+        tool_name = tool[:function][:name]
+        messages = [
+          { role: "system", content: commit_system_prompt(delivery_method) },
+          { role: "user", content: "Here is the original commit that triggered the translation:\n\n#{source_commit_diff}" },
+          { role: "user", content: "Here are the staged translation changes to be committed:\n\n#{staged_diff}" }
+        ]
+
+        payload = {
+          model: @model,
+          messages: messages,
+          tools: [tool],
+          tool_choice: { type: "function", function: { name: tool_name } }
+        }
+
+        response = @http_client.post(OPENAI_URL, payload.to_json, headers)
+        unless response.success?
+          raise "HTTP #{response.status}: #{response.body}"
+        end
+
+        body = JSON.parse(response.body)
+        message = body.dig("choices", 0, "message") || {}
+        arguments = tool_arguments_from(message)
+        unless arguments
+          raise "No tool call in response for commit message generation"
+        end
+
+        parsed = JSON.parse(arguments)
+        validate_commit_content(parsed, delivery_method)
+        parsed
+      end
+
       private
 
       def headers
@@ -174,6 +207,94 @@ module Prism
         end
 
         retries
+      end
+
+      def commit_system_prompt(delivery_method)
+        base = "You are a commit message generator for an automated i18n translation script. " \
+               "The script detects changes in a source locale file, translates the changed strings " \
+               "into target languages using an LLM, and commits the updated locale files.\n\n" \
+               "You will receive two pieces of context:\n" \
+               "1. The original commit (via `git show`) that triggered this translation - this shows what changed in the source locale file\n" \
+               "2. The staged translation changes (via `git diff --cached`) - this shows the translations that will be committed\n\n" \
+               "Write a concise, descriptive commit message that captures the essence of the translation changes, " \
+               "informed by understanding what was changed in the original source commit."
+
+        if delivery_method == "pull_request"
+          base + "\n\nAlso write a pull request title and description. " \
+                 "The PR title should be short and action-oriented. " \
+                 "The PR description should summarize the changes and provide context for reviewers, " \
+                 "referencing what was changed in the original source commit."
+        else
+          base
+        end
+      end
+
+      def commit_tool(delivery_method)
+        if delivery_method == "pull_request"
+          {
+            type: "function",
+            function: {
+              name: "pull_request_commit",
+              description: "Return the commit message, PR title, and PR description for the translation changes.",
+              parameters: {
+                type: "object",
+                properties: {
+                  commit_message: {
+                    type: "string",
+                    description: "A concise commit message describing the translation changes."
+                  },
+                  pr_title: {
+                    type: "string",
+                    description: "A short, action-oriented pull request title."
+                  },
+                  pr_description: {
+                    type: "string",
+                    description: "A description summarizing the changes and providing context for reviewers."
+                  }
+                },
+                required: %w[commit_message pr_title pr_description]
+              }
+            }
+          }
+        else
+          {
+            type: "function",
+            function: {
+              name: "push_commit",
+              description: "Return the commit message for the translation changes.",
+              parameters: {
+                type: "object",
+                properties: {
+                  commit_message: {
+                    type: "string",
+                    description: "A concise commit message describing the translation changes."
+                  }
+                },
+                required: ["commit_message"]
+              }
+            }
+          }
+        end
+      end
+
+      def validate_commit_content(parsed, delivery_method)
+        unless parsed.is_a?(Hash)
+          raise "Commit content is not a hash"
+        end
+
+        unless parsed["commit_message"].is_a?(String) && !parsed["commit_message"].strip.empty?
+          raise "Missing or empty commit_message"
+        end
+
+        return unless delivery_method == "pull_request"
+
+        unless parsed["pr_title"].is_a?(String) && !parsed["pr_title"].strip.empty?
+          raise "Missing or empty pr_title"
+        end
+
+        unless parsed["pr_description"].is_a?(String) && !parsed["pr_description"].strip.empty?
+          raise "Missing or empty pr_description"
+        end
       end
     end
   end

@@ -46,7 +46,9 @@ module Prism
     end
 
     def commit(message)
-      capture("git commit -m #{shell_escape(message)}")
+      # Use array form to bypass shell interpretation - this safely handles
+      # messages with parentheses, quotes, backticks, and other special characters
+      Open3.capture2e("git", "commit", "-m", message, chdir: @path)
     end
 
     def push(branch, remote: "origin")
@@ -70,6 +72,20 @@ module Prism
       return [] unless status.success?
 
       output.split("\n").map(&:strip).reject(&:empty?)
+    end
+
+    def staged_diff
+      output, status = capture("git diff --cached")
+      return nil unless status.success?
+
+      output
+    end
+
+    def show_commit(commit)
+      output, status = capture("git show #{commit}")
+      return nil unless status.success?
+
+      output
     end
 
     def relative_path(path)

@@ -56,8 +56,22 @@ module Prism
       @repo.set_identity(@author_name, @author_email)
       @repo.checkout_new_branch(branch) if delivery == "pull_request"
       @repo.add(updated_paths)
+
+      staged_diff = @repo.staged_diff
+      raise "Failed to get staged diff" if staged_diff.nil?
+
+      source_commit_diff = @repo.show_commit(@commit)
+      raise "Failed to get source commit diff" if source_commit_diff.nil?
+
+      commit_content = engine.generate_commit_content(
+        source_commit_diff: source_commit_diff,
+        staged_diff: staged_diff,
+        delivery_method: delivery
+      )
+      puts "Generated commit content: #{JSON.pretty_generate(commit_content)}"
+
       before_head = @repo.head_sha
-      commit_output, commit_status = @repo.commit("chore(i18n): auto-translate updated strings")
+      commit_output, commit_status = @repo.commit(commit_content["commit_message"])
       unless commit_status.success?
         raise "Failed to create commit: #{commit_output}"
       end
@@ -93,11 +107,10 @@ module Prism
         raise "Remote branch #{branch} does not point to commit #{commit_sha}. Found: #{remote_head || "none"}"
       end
 
-      pr_body = pull_request_body(result, backfilled_keys)
       created_pr = client.create_pull_request(
         head: branch,
-        title: "Auto-translate i18n updates",
-        body: pr_body
+        title: commit_content["pr_title"],
+        body: commit_content["pr_description"]
       )
       unless created_pr && created_pr["number"]
         raise "Pull request creation did not return a PR number."
@@ -251,29 +264,6 @@ module Prism
 
     def target_locales
       @target_locales ||= @target_languages.reject { |locale| locale == source_locale }
-    end
-
-    def pull_request_body(result, backfilled_keys)
-      modified_keys = Array(result.modified_strings&.keys).sort
-      added_keys = Array(result.added_strings&.keys) + backfilled_keys
-      added_keys -= modified_keys
-      added_keys = added_keys.uniq.sort
-
-      body = +"Automated translations for #{@source_file} (#{@commit}).\n\n"
-      body << format_pr_section("Added fields", added_keys)
-      body << "\n"
-      body << format_pr_section("Modified fields", modified_keys)
-      body
-    end
-
-    def format_pr_section(title, keys)
-      lines = ["#{title}:"]
-      if keys.empty?
-        lines << "- None"
-      else
-        keys.each { |key| lines << "- #{key}" }
-      end
-      lines.join("\n")
     end
 
     def with_token_remote
