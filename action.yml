@@ -47,7 +47,7 @@ runs:
       shell: bash
     - name: "Run translator"
       run: |
-        bin/prism_translate \
+        bundle exec bin/prism_translate \
           --source-file "${{ inputs.source_file }}" \
           --target-languages "${{ inputs.target_languages }}" \
           --source-repo "${{ inputs.source_repo }}" \
