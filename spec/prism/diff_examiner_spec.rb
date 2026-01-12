@@ -64,4 +64,26 @@ RSpec.describe Prism::DiffExaminer do
       expect(result.source_locale_root).to eq("en")
     end
   end
+
+  it "flags a single key change in a nested JSON locale path" do
+    init_repo do |dir|
+      initial = {
+        "noDescription" => "No description",
+        "editWorld" => "Edit World",
+        "worldTitle" => "Title",
+        "makePublic" => "Make this world public"
+      }
+      updated = initial.merge("makePublic" => "Public")
+
+      commit_file(dir, "src/locales/en.json", JSON.pretty_generate(initial), "init")
+      sha, = commit_file(dir, "src/locales/en.json", JSON.pretty_generate(updated), "update")
+
+      repo = Prism::GitRepo.new(dir)
+      examiner = described_class.new(repo: repo, commit: sha, source_file: "src/locales/en.json")
+      result = examiner.changed_strings
+
+      expect(result.changed_strings).to eq({ "makePublic" => "Public" })
+      expect(result.source_locale_root).to be_nil
+    end
+  end
 end

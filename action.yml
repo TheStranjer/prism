@@ -47,7 +47,7 @@ runs:
       shell: bash
     - name: "Run translator"
       run: |
-        bundle exec bin/prism_translate \
+        bundle exec "${{ github.action_path }}/bin/prism_translate" \
           --source-file "${{ inputs.source_file }}" \
           --target-languages "${{ inputs.target_languages }}" \
           --source-repo "${{ inputs.source_repo }}" \
@@ -58,7 +58,10 @@ runs:
           --api-token "${{ inputs.api_token }}" \
           --model "${{ inputs.model }}" \
           --github-token "${{ inputs.github_token }}"
-      working-directory: ${{ github.action_path }}
+      working-directory: ${{ github.workspace }}
+      env:
+        BUNDLE_GEMFILE: ${{ github.action_path }}/Gemfile
+        BUNDLE_PATH: ${{ github.action_path }}/vendor/bundle
       shell: bash
 branding:
   icon: "globe"
