@@ -5,7 +5,14 @@ require "yaml"
 
 module Prism
   class DiffExaminer
-    Result = Struct.new(:changed_strings, :source_locale_root, keyword_init: true)
+    Result = Struct.new(
+      :changed_strings,
+      :source_locale_root,
+      :added_strings,
+      :modified_strings,
+      :source_strings,
+      keyword_init: true
+    )
 
     def initialize(repo:, commit:, source_file:, source_locale: nil)
       @repo = repo
@@ -32,14 +39,26 @@ module Prism
       old_flat = old_locale_file.flattened_strings
       new_flat = new_locale_file.flattened_strings
 
-      changed = {}
+      added = {}
+      modified = {}
       new_flat.each do |key, value|
-        next unless old_flat[key] != value
+        unless old_flat.key?(key)
+          added[key] = value
+          next
+        end
 
-        changed[key] = value
+        next if old_flat[key] == value
+
+        modified[key] = value
       end
 
-      Result.new(changed_strings: changed, source_locale_root: new_locale_file.root_key)
+      Result.new(
+        changed_strings: added.merge(modified),
+        source_locale_root: new_locale_file.root_key,
+        added_strings: added,
+        modified_strings: modified,
+        source_strings: new_flat
+      )
     end
 
     private

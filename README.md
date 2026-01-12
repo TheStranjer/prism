@@ -1,6 +1,6 @@
 # Prism Auto-Translate Action
 
-Auto-translate i18n JSON/YAML files when the source language changes. The action inspects the diff for the source locale file, translates only the changed keys, updates the target locale files, and opens a pull request.
+Auto-translate i18n JSON/YAML files when the source language changes. The action inspects the diff for the source locale file, translates changed keys, backfills missing keys in target locales, updates the target locale files, and opens a pull request.
 
 ## What it does
 

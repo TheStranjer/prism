@@ -45,6 +45,9 @@ RSpec.describe Prism::DiffExaminer do
       result = examiner.changed_strings
 
       expect(result.changed_strings).to eq({ "greeting" => "Hello there" })
+      expect(result.added_strings).to eq({})
+      expect(result.modified_strings).to eq({ "greeting" => "Hello there" })
+      expect(result.source_strings).to eq({ "greeting" => "Hello there", "title" => "App" })
       expect(result.source_locale_root).to be_nil
     end
   end
@@ -61,6 +64,9 @@ RSpec.describe Prism::DiffExaminer do
       result = examiner.changed_strings
 
       expect(result.changed_strings).to eq({ "home.title" => "Homepage" })
+      expect(result.added_strings).to eq({})
+      expect(result.modified_strings).to eq({ "home.title" => "Homepage" })
+      expect(result.source_strings).to eq({ "home.title" => "Homepage" })
       expect(result.source_locale_root).to eq("en")
     end
   end
@@ -83,7 +89,33 @@ RSpec.describe Prism::DiffExaminer do
       result = examiner.changed_strings
 
       expect(result.changed_strings).to eq({ "makePublic" => "Public" })
+      expect(result.added_strings).to eq({})
+      expect(result.modified_strings).to eq({ "makePublic" => "Public" })
+      expect(result.source_strings).to eq({
+        "noDescription" => "No description",
+        "editWorld" => "Edit World",
+        "worldTitle" => "Title",
+        "makePublic" => "Public"
+      })
       expect(result.source_locale_root).to be_nil
+    end
+  end
+
+  it "separates added and modified keys" do
+    init_repo do |dir|
+      initial = { "greeting" => "Hello" }
+      updated = { "greeting" => "Hello there", "title" => "App" }
+
+      commit_file(dir, "locales/en.json", JSON.pretty_generate(initial), "init")
+      sha, = commit_file(dir, "locales/en.json", JSON.pretty_generate(updated), "update")
+
+      repo = Prism::GitRepo.new(dir)
+      examiner = described_class.new(repo: repo, commit: sha, source_file: "locales/en.json")
+      result = examiner.changed_strings
+
+      expect(result.added_strings).to eq({ "title" => "App" })
+      expect(result.modified_strings).to eq({ "greeting" => "Hello there" })
+      expect(result.changed_strings).to eq({ "title" => "App", "greeting" => "Hello there" })
     end
   end
 end

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "set"
 require "yaml"
 
 module Prism
@@ -24,12 +25,17 @@ module Prism
       diff = DiffExaminer.new(repo: @repo, commit: @commit, source_file: @source_file)
       return :unchanged if diff.unchanged?
 
-      result = diff.changed_strings
-      return :no_strings if result.changed_strings.empty?
-
       engine = build_engine
+      result = diff.changed_strings
+      requests, backfilled_keys = build_translation_requests(result)
+      return :no_strings if requests.empty?
+
       puts "Changed strings: #{JSON.pretty_generate(result.changed_strings)}"
-      translations = translate_strings(engine, result.changed_strings)
+      unless backfilled_keys.empty?
+        puts "Backfilled strings: #{JSON.pretty_generate(backfilled_keys.sort)}"
+      end
+
+      translations = translate_strings(engine, requests)
 
       puts "Translations: #{JSON.pretty_generate(translations)}"
 
@@ -76,10 +82,11 @@ module Prism
         raise "Remote branch #{branch} does not point to commit #{commit_sha}. Found: #{remote_head || "none"}"
       end
 
+      pr_body = pull_request_body(result, backfilled_keys)
       created_pr = client.create_pull_request(
         head: branch,
         title: "Auto-translate i18n updates",
-        body: "Automated translations for #{@source_file} (#{@commit})."
+        body: pr_body
       )
       unless created_pr && created_pr["number"]
         raise "Pull request creation did not return a PR number."
@@ -104,18 +111,20 @@ module Prism
       end
     end
 
-    def translate_strings(engine, changed_strings)
+    def translate_strings(engine, requests)
       translations = Hash.new { |hash, key| hash[key] = {} }
       failures = {}
 
-      changed_strings.each do |key, value|
+      requests.each do |key, request|
+        value = request[:value]
+        locales = request[:locales]
         next unless value.is_a?(String)
 
-        result = engine.get_translations(value, @target_languages)
+        result = engine.get_translations(value, locales)
         result_translations = result["translations"] || {}
         result_errors = result["errors"] || {}
 
-        @target_languages.each do |locale|
+        locales.each do |locale|
           translation = result_translations[locale]
           if translation.is_a?(String) && !translation.strip.empty?
             translations[locale][key] = translation
@@ -169,6 +178,74 @@ module Prism
 
       data = { locale => locale_file.data }
       LocaleFile.new(data, locale_hint: locale)
+    end
+
+    def build_translation_requests(result)
+      source_strings = result.source_strings || {}
+      changed_strings = result.changed_strings || {}
+      changed_keys = Set.new(changed_strings.keys)
+      missing_locales_by_key = Hash.new { |hash, key| hash[key] = [] }
+
+      @target_languages.each do |locale|
+        target_path = LocaleFile.target_path_for(@source_file, locale)
+        target_strings = load_flattened_strings(target_path, locale)
+        source_strings.each_key do |key|
+          next if changed_keys.include?(key)
+          next if target_strings.key?(key)
+
+          missing_locales_by_key[key] << locale
+        end
+      end
+
+      requests = {}
+      changed_strings.each do |key, value|
+        requests[key] = { value: value, locales: @target_languages }
+      end
+
+      missing_locales_by_key.each do |key, locales|
+        value = source_strings[key]
+        next unless value.is_a?(String)
+
+        requests[key] = { value: value, locales: locales }
+      end
+
+      [requests, missing_locales_by_key.keys]
+    end
+
+    def load_flattened_strings(path, locale)
+      return {} unless File.exist?(path)
+
+      content = File.read(path)
+      data = if path.end_with?(".json")
+               JSON.parse(content)
+             else
+               YAML.safe_load(content, aliases: true) || {}
+             end
+
+      LocaleFile.new(data, locale_hint: locale).flattened_strings
+    end
+
+    def pull_request_body(result, backfilled_keys)
+      modified_keys = Array(result.modified_strings&.keys).sort
+      added_keys = Array(result.added_strings&.keys) + backfilled_keys
+      added_keys -= modified_keys
+      added_keys = added_keys.uniq.sort
+
+      body = +"Automated translations for #{@source_file} (#{@commit}).\n\n"
+      body << format_pr_section("Added fields", added_keys)
+      body << "\n"
+      body << format_pr_section("Modified fields", modified_keys)
+      body
+    end
+
+    def format_pr_section(title, keys)
+      lines = ["#{title}:"]
+      if keys.empty?
+        lines << "- None"
+      else
+        keys.each { |key| lines << "- #{key}" }
+      end
+      lines.join("\n")
     end
 
     def with_token_remote
