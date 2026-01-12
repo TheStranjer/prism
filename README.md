@@ -21,6 +21,7 @@ Auto-translate i18n JSON/YAML files when the source language changes. The action
 - `engine` (required): Translation engine name (use `ChatGPT`).
 - `api_token` (required): API token for the translation engine.
 - `model` (required): Model identifier for the translation engine.
+- `retries` (optional): Number of retry attempts when translations are incomplete (default: `5`). Use `0` to disable retries.
 - `github_token` (required): Token used to push the branch and open PRs.
 
 ## Example workflow
@@ -55,6 +56,7 @@ jobs:
           engine: "ChatGPT"
           api_token: ${{ secrets.OPENAI_API_KEY }}
           model: "gpt-4o-mini"
+          retries: "5"
           github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
@@ -62,4 +64,3 @@ jobs:
 
 - The action expects the repo to be checked out with full history (`fetch-depth: 0`) so it can inspect diffs.
 - Target locale files are inferred by swapping the source locale filename (e.g. `en.json` -> `fr.json`).
-

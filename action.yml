@@ -29,6 +29,10 @@ inputs:
   model:
     description: "Model identifier for the translation engine."
     required: true
+  retries:
+    description: "Number of retry attempts when translations are incomplete."
+    required: false
+    default: "5"
   github_token:
     description: "GitHub token used to push and open PRs."
     required: true
@@ -57,6 +61,7 @@ runs:
           --engine "${{ inputs.engine }}" \
           --api-token "${{ inputs.api_token }}" \
           --model "${{ inputs.model }}" \
+          --retries "${{ inputs.retries }}" \
           --github-token "${{ inputs.github_token }}"
       working-directory: ${{ github.workspace }}
       env:

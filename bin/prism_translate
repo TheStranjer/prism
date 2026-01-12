@@ -7,7 +7,8 @@ require_relative "../lib/prism"
 options = {
   repo: ENV.fetch("GITHUB_REPOSITORY", nil),
   commit: ENV.fetch("GITHUB_SHA", nil),
-  github_token: ENV.fetch("GITHUB_TOKEN", nil)
+  github_token: ENV.fetch("GITHUB_TOKEN", nil),
+  retries: 5
 }
 
 parser = OptionParser.new do |opts|
@@ -24,6 +25,7 @@ parser = OptionParser.new do |opts|
   opts.on("--model MODEL") { |v| options[:model] = v }
   opts.on("--github-token TOKEN") { |v| options[:github_token] = v }
   opts.on("--repo-slug SLUG") { |v| options[:repo] = v }
+  opts.on("--retries N", Integer) { |v| options[:retries] = v }
 end
 
 parser.parse!
@@ -32,6 +34,10 @@ required = %i[source_file target_languages author_name author_email engine api_t
 missing = required.select { |key| options[key].nil? || options[key].to_s.empty? }
 unless missing.empty?
   warn "Missing required options: #{missing.join(", ") }"
+  exit 1
+end
+if options[:retries].nil? || options[:retries] < 0
+  warn "Retries must be a non-negative integer"
   exit 1
 end
 
@@ -49,7 +55,8 @@ translator = Prism::Translator.new(
   author_name: options[:author_name],
   author_email: options[:author_email],
   github_token: options[:github_token],
-  repo_slug: options[:repo]
+  repo_slug: options[:repo],
+  retries: options[:retries]
 )
 
 result = translator.run

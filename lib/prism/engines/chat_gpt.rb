@@ -8,26 +8,47 @@ module Prism
     class ChatGPT < Base
       OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 
-      def initialize(api_token:, model:, http_client: nil)
+      def initialize(api_token:, model:, retries: 5, http_client: nil)
         super(api_token: api_token, model: model)
+        @retries = validate_retries(retries)
         @http_client = http_client || Faraday.new
       end
 
       def get_translations(text, target_languages)
-        payload = build_payload(text, target_languages)
-        response = @http_client.post(OPENAI_URL, payload.to_json, headers)
-        return error_payload("HTTP #{response.status}: #{response.body}") unless response.success?
+        messages = base_messages(text, target_languages)
+        last_error = nil
 
-        body = JSON.parse(response.body)
-        puts "Response body: #{JSON.pretty_generate(body)}"
-        message = body.dig("choices", 0, "message") || {}
-        arguments = tool_arguments_from(message)
-        return error_payload("No tool call or JSON content in response") unless arguments
+        (0..@retries).each do
+          payload = build_payload(messages, target_languages)
+          response = @http_client.post(OPENAI_URL, payload.to_json, headers)
+          return error_payload("HTTP #{response.status}: #{response.body}") unless response.success?
 
-        parsed = JSON.parse(arguments)
-        return error_payload("Tool call arguments are not a JSON object") unless parsed.is_a?(Hash)
+          body = JSON.parse(response.body)
+          message = body.dig("choices", 0, "message") || {}
+          arguments = tool_arguments_from(message)
+          unless arguments
+            last_error = "No tool call or JSON content in response"
+            messages = retry_messages(messages, last_error)
+            next
+          end
 
-        parsed
+          parsed = JSON.parse(arguments)
+          unless parsed.is_a?(Hash)
+            last_error = "Tool call arguments are not a JSON object"
+            messages = retry_messages(messages, last_error)
+            next
+          end
+
+          missing_locales = missing_locales(parsed["translations"], target_languages)
+          if missing_locales.empty?
+            return parsed
+          end
+
+          last_error = "Missing translations for locales: #{missing_locales.join(", ")}"
+          messages = retry_messages(messages, last_error)
+        end
+
+        error_payload(last_error || "No tool call or JSON content in response")
       rescue JSON::ParserError => e
         error_payload("Invalid JSON in tool call arguments: #{e.message}")
       rescue StandardError => e
@@ -43,31 +64,32 @@ module Prism
         }
       end
 
-      def build_payload(text, target_languages)
+      def build_payload(messages, target_languages)
+        tool = translation_tool(target_languages)
         {
           model: @model,
-          messages: [
-            {
-              role: "system",
-              content: system_prompt(target_languages)
-            },
-            {
-              role: "user",
-              content: text
-            }
-          ],
-          tools: [translation_tool],
-          tool_choice: { type: "function", function: { name: translation_tool[:function][:name] } }
+          messages: messages,
+          tools: [tool],
+          tool_choice: { type: "function", function: { name: tool[:function][:name] } }
         }
       end
 
       def system_prompt(target_languages)
-        "You translate i18n strings. Translate the user message into each of: #{target_languages.join(", ")}. " \
-          "Return translations for every locale using those exact locale keys. " \
-          "If a locale cannot be translated, include an error message for that locale."
+        "You are a translation engine for i18n strings. " \
+          "Translate the user message into each of: #{target_languages.join(", ")}. " \
+          "You must call the translations tool and provide non-empty values for every locale key. " \
+          "Preserve placeholders and formatting exactly (e.g., %{name}, {{count}}, %s). " \
+          "If a locale cannot be translated, include an error message for that locale in errors."
       end
 
-      def translation_tool
+      def translation_tool(target_languages)
+        locale_properties = target_languages.each_with_object({}) do |locale, hash|
+          hash[locale] = {
+            type: "string",
+            description: "Translation for locale #{locale}."
+          }
+        end
+
         {
           type: "function",
           function: {
@@ -78,11 +100,16 @@ module Prism
               properties: {
                 translations: {
                   type: "object",
-                  additionalProperties: { type: "string" }
+                  properties: locale_properties,
+                  required: target_languages,
+                  additionalProperties: false
                 },
                 errors: {
                   type: "object",
-                  additionalProperties: { type: "string" }
+                  properties: locale_properties.merge(
+                    "_request" => { type: "string", description: "Request-level error." }
+                  ),
+                  additionalProperties: false
                 }
               },
               required: ["translations"]
@@ -108,6 +135,45 @@ module Prism
 
       def error_payload(message)
         { "translations" => {}, "errors" => { "_request" => message } }
+      end
+
+      def base_messages(text, target_languages)
+        [
+          {
+            role: "system",
+            content: system_prompt(target_languages)
+          },
+          {
+            role: "user",
+            content: text
+          }
+        ]
+      end
+
+      def retry_messages(messages, reason)
+        messages + [
+          {
+            role: "user",
+            content: "Retry required: #{reason}. Return a tool call with translations for every locale."
+          }
+        ]
+      end
+
+      def missing_locales(translations, target_languages)
+        return target_languages if !translations.is_a?(Hash) || translations.empty?
+
+        target_languages.reject do |locale|
+          value = translations[locale]
+          value.is_a?(String) && !value.strip.empty?
+        end
+      end
+
+      def validate_retries(retries)
+        unless retries.is_a?(Integer) && retries >= 0
+          raise ArgumentError, "retries must be a non-negative integer"
+        end
+
+        retries
       end
     end
   end

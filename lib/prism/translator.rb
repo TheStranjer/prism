@@ -5,7 +5,7 @@ require "yaml"
 
 module Prism
   class Translator
-    def initialize(repo:, commit:, source_file:, target_languages:, engine:, api_token:, model:, author_name:, author_email:, github_token:, repo_slug:)
+    def initialize(repo:, commit:, source_file:, target_languages:, engine:, api_token:, model:, author_name:, author_email:, github_token:, repo_slug:, retries: 5)
       @repo = repo
       @commit = commit
       @source_file = source_file
@@ -17,6 +17,7 @@ module Prism
       @author_email = author_email
       @github_token = github_token
       @repo_slug = repo_slug
+      @retries = retries
     end
 
     def run
@@ -60,7 +61,7 @@ module Prism
     def build_engine
       case @engine_name.downcase
       when "chatgpt"
-        Engines::ChatGPT.new(api_token: @api_token, model: @model)
+        Engines::ChatGPT.new(api_token: @api_token, model: @model, retries: @retries)
       else
         raise ArgumentError, "Unknown engine: #{@engine_name}"
       end
