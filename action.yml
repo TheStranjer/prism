@@ -1,0 +1,62 @@
+name: "Prism Auto-Translate"
+description: "Auto-translate i18n files based on source diff updates."
+author: "TheStranjer"
+inputs:
+  source_file:
+    description: "Path to the source language file (e.g. src/locales/en.json)."
+    required: true
+  target_languages:
+    description: "Comma-separated list of target locales (e.g. fr,es,de)."
+    required: true
+  source_repo:
+    description: "Repository slug (owner/name)."
+    required: true
+  source_commit:
+    description: "Commit SHA to compare against its parent."
+    required: true
+  author_name:
+    description: "Git author name for the translation commit."
+    required: true
+  author_email:
+    description: "Git author email for the translation commit."
+    required: true
+  engine:
+    description: "Translation engine name (e.g. ChatGPT)."
+    required: true
+  api_token:
+    description: "API token for the translation engine."
+    required: true
+  model:
+    description: "Model identifier for the translation engine."
+    required: true
+  github_token:
+    description: "GitHub token used to push and open PRs."
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: "Setup Ruby"
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: "3.2"
+        bundler-cache: true
+    - name: "Install dependencies"
+      run: bundle install
+      shell: bash
+    - name: "Run translator"
+      run: |
+        bin/prism_translate \
+          --source-file "${{ inputs.source_file }}" \
+          --target-languages "${{ inputs.target_languages }}" \
+          --source-repo "${{ inputs.source_repo }}" \
+          --source-commit "${{ inputs.source_commit }}" \
+          --author-name "${{ inputs.author_name }}" \
+          --author-email "${{ inputs.author_email }}" \
+          --engine "${{ inputs.engine }}" \
+          --api-token "${{ inputs.api_token }}" \
+          --model "${{ inputs.model }}" \
+          --github-token "${{ inputs.github_token }}"
+      shell: bash
+branding:
+  icon: "globe"
+  color: "blue"
