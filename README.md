@@ -8,7 +8,7 @@ Auto-translate i18n JSON/YAML files when the source language changes. The action
 2. Extracts changed keys and their updated strings.
 3. Sends each updated string to the configured engine (ChatGPT today).
 4. Updates target locale files (JSON or YAML, with or without root locale).
-5. Generates a commit message (and PR title/description if using `pull_request` delivery) using the LLM based on the staged changes.
+5. Commits the changes with either an LLM-generated message (if `llm_commit_messages: true`) or a default message.
 6. Creates a pull request with the translated changes (or pushes directly if configured).
 
 ## Inputs
@@ -25,6 +25,7 @@ Auto-translate i18n JSON/YAML files when the source language changes. The action
 - `retries` (optional): Number of retry attempts when translations are incomplete (default: `5`). Use `0` to disable retries.
 - `github_token` (required): Token used to push the branch and open PRs.
 - `delivery_method` (optional): `pull_request` (default) or `push`. Use `push` to commit directly to the current branch.
+- `llm_commit_messages` (optional): `true` or `false` (default). When enabled, uses the LLM to generate descriptive commit messages based on the translation changes. When disabled, uses a generic "Update translations" message.
 
 ## Example workflow
 
@@ -64,7 +65,7 @@ jobs:
 
 ## LLM-Generated Commit Messages
 
-After translating strings and staging the changes, the action calls the LLM to generate meaningful commit messages. The LLM receives two pieces of context:
+When `llm_commit_messages: true` is set, the action calls the LLM to generate meaningful commit messages after translating strings and staging the changes. The LLM receives two pieces of context:
 
 1. **The original commit** (via `git show <sha>`) - shows what changed in the source locale file that triggered the translation
 2. **The staged translation changes** (via `git diff --cached`) - shows the translations that will be committed
@@ -92,3 +93,10 @@ When `delivery_method: pull_request`, the LLM generates both a commit message an
   "pr_description": "This PR adds French, Spanish, and German translations for the updated welcome message. The source text was changed from 'Hello' to 'Welcome back' and all target locales have been updated accordingly."
 }
 ```
+
+### Default Mode (llm_commit_messages: false)
+
+When `llm_commit_messages` is not set or set to `false`, the action uses a simple default message:
+- Commit message: "Update translations"
+- PR title (if applicable): "Update translations"
+- PR description (if applicable): "Automated translation updates."

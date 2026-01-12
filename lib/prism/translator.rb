@@ -6,7 +6,7 @@ require "yaml"
 
 module Prism
   class Translator
-    def initialize(repo:, commit:, source_file:, target_languages:, engine:, api_token:, model:, author_name:, author_email:, github_token:, repo_slug:, retries: 5, delivery_method: "pull_request")
+    def initialize(repo:, commit:, source_file:, target_languages:, engine:, api_token:, model:, author_name:, author_email:, github_token:, repo_slug:, retries: 5, delivery_method: "pull_request", llm_commit_messages: false)
       @repo = repo
       @commit = commit
       @source_file = source_file
@@ -20,6 +20,7 @@ module Prism
       @repo_slug = repo_slug
       @retries = retries
       @delivery_method = delivery_method
+      @llm_commit_messages = llm_commit_messages
     end
 
     def run
@@ -60,14 +61,18 @@ module Prism
       staged_diff = @repo.staged_diff
       raise "Failed to get staged diff" if staged_diff.nil?
 
-      source_commit_diff = @repo.show_commit(@commit)
-      raise "Failed to get source commit diff" if source_commit_diff.nil?
+      commit_content = if @llm_commit_messages
+                         source_commit_diff = @repo.show_commit(@commit)
+                         raise "Failed to get source commit diff" if source_commit_diff.nil?
 
-      commit_content = engine.generate_commit_content(
-        source_commit_diff: source_commit_diff,
-        staged_diff: staged_diff,
-        delivery_method: delivery
-      )
+                         engine.generate_commit_content(
+                           source_commit_diff: source_commit_diff,
+                           staged_diff: staged_diff,
+                           delivery_method: delivery
+                         )
+                       else
+                         default_commit_content(delivery)
+                       end
       puts "Generated commit content: #{JSON.pretty_generate(commit_content)}"
 
       before_head = @repo.head_sha
@@ -140,6 +145,15 @@ module Prism
       return normalized if %w[pull_request push].include?(normalized)
 
       raise ArgumentError, "Unknown delivery method: #{@delivery_method}"
+    end
+
+    def default_commit_content(delivery)
+      content = { "commit_message" => "Update translations" }
+      if delivery == "pull_request"
+        content["pr_title"] = "Update translations"
+        content["pr_description"] = "Automated translation updates."
+      end
+      content
     end
 
     def translate_strings(engine, requests)

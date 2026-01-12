@@ -9,7 +9,8 @@ options = {
   commit: ENV.fetch("GITHUB_SHA", nil),
   github_token: ENV.fetch("GITHUB_TOKEN", nil),
   retries: 5,
-  delivery_method: "pull_request"
+  delivery_method: "pull_request",
+  llm_commit_messages: false
 }
 
 parser = OptionParser.new do |opts|
@@ -28,6 +29,7 @@ parser = OptionParser.new do |opts|
   opts.on("--repo-slug SLUG") { |v| options[:repo] = v }
   opts.on("--retries N", Integer) { |v| options[:retries] = v }
   opts.on("--delivery-method MODE") { |v| options[:delivery_method] = v }
+  opts.on("--llm-commit-messages BOOL") { |v| options[:llm_commit_messages] = v.to_s.downcase == "true" }
 end
 
 parser.parse!
@@ -64,7 +66,8 @@ translator = Prism::Translator.new(
   github_token: options[:github_token],
   repo_slug: options[:repo],
   retries: options[:retries],
-  delivery_method: delivery_method
+  delivery_method: delivery_method,
+  llm_commit_messages: options[:llm_commit_messages]
 )
 
 result = translator.run

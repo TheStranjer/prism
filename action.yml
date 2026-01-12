@@ -46,6 +46,10 @@ inputs:
     description: "How to deliver changes: pull_request or push."
     required: false
     default: "pull_request"
+  llm_commit_messages:
+    description: "Use LLM to generate commit messages. When false, uses a default message."
+    required: false
+    default: "false"
 runs:
   using: "composite"
   steps:
@@ -73,7 +77,8 @@ runs:
           --model "${{ inputs.model }}" \
           --retries "${{ inputs.retries }}" \
           --github-token "${{ inputs.github_token }}" \
-          --delivery-method "${{ inputs.delivery_method }}"
+          --delivery-method "${{ inputs.delivery_method }}" \
+          --llm-commit-messages "${{ inputs.llm_commit_messages }}"
       working-directory: ${{ github.workspace }}
       env:
         BUNDLE_GEMFILE: ${{ github.action_path }}/Gemfile
