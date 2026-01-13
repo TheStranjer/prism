@@ -11,18 +11,19 @@ RSpec.describe Prism::Translator do
     File.write(path, JSON.pretty_generate(data))
   end
 
-  def build_translator(source_file:, target_languages:, delivery_method: 'pull_request', llm_commit_messages: false)
+  def build_translator(source_file:, target_languages:, delivery_method: 'pull_request', llm_commit_messages: false,
+                       api_token: 'token', github_token: 'gh')
     described_class.new(
       repo: instance_double(Prism::GitRepo),
       commit: 'sha',
       source_file: source_file,
       target_languages: target_languages,
       engine: 'ChatGPT',
-      api_token: 'token',
+      api_token: api_token,
       model: 'gpt-5-mini',
       author_name: 'TheStranjer',
       author_email: 'thestranjer@protonmail.com',
-      github_token: 'gh',
+      github_token: github_token,
       repo_slug: 'org/repo',
       delivery_method: delivery_method,
       llm_commit_messages: llm_commit_messages
@@ -171,6 +172,7 @@ RSpec.describe Prism::Translator do
       ).and_return({
                      'commit_message' => 'Add French translations for greeting'
                    })
+      allow(engine).to receive(:validate_token).and_return(true)
       allow(translator).to receive(:build_engine).and_return(engine)
       allow(translator).to receive(:build_translation_requests).and_return([
                                                                              { 'greeting' => { value: 'Hello',
@@ -179,6 +181,10 @@ RSpec.describe Prism::Translator do
       allow(translator).to receive(:translate_strings).and_return({ 'fr' => { 'greeting' => 'Bonjour' } })
       allow(translator).to receive(:apply_translations).and_return([File.join(dir, 'locales/fr.json')])
       allow(translator).to receive(:with_token_remote).and_yield('origin')
+
+      github_client = instance_double(Prism::GitHubClient)
+      allow(Prism::GitHubClient).to receive(:new).with(token: 'gh', repo_slug: 'org/repo').and_return(github_client)
+      allow(github_client).to receive(:validate_token_with_reason).and_return({ valid: true, reason: nil })
 
       allow(repo).to receive(:set_identity)
       allow(repo).to receive(:current_branch).and_return('main')
@@ -195,7 +201,6 @@ RSpec.describe Prism::Translator do
                                           remote: 'origin').and_return(['ok',
                                                                         instance_double(Process::Status,
                                                                                         success?: true)])
-      expect(Prism::GitHubClient).not_to receive(:new)
 
       result = translator.run
 
@@ -221,6 +226,7 @@ RSpec.describe Prism::Translator do
 
       engine = instance_double(Prism::Engines::ChatGPT)
       expect(engine).not_to receive(:generate_commit_content)
+      allow(engine).to receive(:validate_token).and_return(true)
       allow(translator).to receive(:build_engine).and_return(engine)
       allow(translator).to receive(:build_translation_requests).and_return([
                                                                              { 'greeting' => { value: 'Hello',
@@ -229,6 +235,10 @@ RSpec.describe Prism::Translator do
       allow(translator).to receive(:translate_strings).and_return({ 'fr' => { 'greeting' => 'Bonjour' } })
       allow(translator).to receive(:apply_translations).and_return([File.join(dir, 'locales/fr.json')])
       allow(translator).to receive(:with_token_remote).and_yield('origin')
+
+      validation_client = instance_double(Prism::GitHubClient)
+      allow(Prism::GitHubClient).to receive(:new).with(token: 'gh', repo_slug: 'org/repo').and_return(validation_client)
+      allow(validation_client).to receive(:validate_token_with_reason).and_return({ valid: true, reason: nil })
 
       allow(repo).to receive(:set_identity)
       allow(repo).to receive(:current_branch).and_return('main')
@@ -245,7 +255,6 @@ RSpec.describe Prism::Translator do
                                           remote: 'origin').and_return(['ok',
                                                                         instance_double(Process::Status,
                                                                                         success?: true)])
-      expect(Prism::GitHubClient).not_to receive(:new)
 
       result = translator.run
 
@@ -279,6 +288,7 @@ RSpec.describe Prism::Translator do
                      'pr_title' => 'Update translations for greeting changes',
                      'pr_description' => 'This PR adds French translations for the greeting field.'
                    })
+      allow(engine).to receive(:validate_token).and_return(true)
       allow(translator).to receive(:build_engine).and_return(engine)
       allow(translator).to receive(:build_translation_requests).and_return([
                                                                              { 'greeting' => { value: 'Hello',
@@ -302,7 +312,8 @@ RSpec.describe Prism::Translator do
                                     .and_return(['ok', instance_double(Process::Status, success?: true)])
 
       client = instance_double(Prism::GitHubClient)
-      expect(Prism::GitHubClient).to receive(:new).with(token: 'gh', repo_slug: 'org/repo').and_return(client)
+      allow(Prism::GitHubClient).to receive(:new).with(token: 'gh', repo_slug: 'org/repo').and_return(client)
+      allow(client).to receive(:validate_token_with_reason).and_return({ valid: true, reason: nil })
       allow(client).to receive(:branch_head_sha).and_return('new')
       expect(client).to receive(:create_pull_request).with(
         head: a_string_matching(%r{\Ai18n/auto-translate-\d{14}\z}),
@@ -335,6 +346,7 @@ RSpec.describe Prism::Translator do
 
       engine = instance_double(Prism::Engines::ChatGPT)
       expect(engine).not_to receive(:generate_commit_content)
+      allow(engine).to receive(:validate_token).and_return(true)
       allow(translator).to receive(:build_engine).and_return(engine)
       allow(translator).to receive(:build_translation_requests).and_return([
                                                                              { 'greeting' => { value: 'Hello',
@@ -358,7 +370,8 @@ RSpec.describe Prism::Translator do
                                     .and_return(['ok', instance_double(Process::Status, success?: true)])
 
       client = instance_double(Prism::GitHubClient)
-      expect(Prism::GitHubClient).to receive(:new).with(token: 'gh', repo_slug: 'org/repo').and_return(client)
+      allow(Prism::GitHubClient).to receive(:new).with(token: 'gh', repo_slug: 'org/repo').and_return(client)
+      allow(client).to receive(:validate_token_with_reason).and_return({ valid: true, reason: nil })
       allow(client).to receive(:branch_head_sha).and_return('new')
       expect(client).to receive(:create_pull_request).with(
         head: a_string_matching(%r{\Ai18n/auto-translate-\d{14}\z}),
@@ -370,6 +383,276 @@ RSpec.describe Prism::Translator do
       result = translator.run
 
       expect(result).to eq(:ok)
+    end
+  end
+
+  describe 'token validation before translation' do
+    it 'validates both tokens before attempting translation' do
+      Dir.mktmpdir do |dir|
+        source_path = File.join(dir, 'locales/en.json')
+        write_json(source_path, { 'greeting' => 'Hello' })
+
+        translator = build_translator(source_file: source_path, target_languages: ['fr'])
+
+        diff = instance_double(Prism::DiffExaminer, unchanged?: false, changed_strings: Prism::DiffExaminer::Result.new(
+          changed_strings: { 'greeting' => 'Hello' },
+          source_locale_root: nil,
+          added_strings: {},
+          modified_strings: {},
+          source_strings: {}
+        ))
+        allow(Prism::DiffExaminer).to receive(:new).and_return(diff)
+
+        engine = instance_double(Prism::Engines::ChatGPT)
+        allow(translator).to receive(:build_engine).and_return(engine)
+        allow(translator).to receive(:build_translation_requests).and_return([
+                                                                               { 'greeting' => { value: 'Hello',
+                                                                                                 locales: ['fr'] } }, []
+                                                                             ])
+
+        github_client = instance_double(Prism::GitHubClient)
+        allow(Prism::GitHubClient).to receive(:new).and_return(github_client)
+
+        expect(engine).to receive(:validate_token).ordered.and_return(true)
+        expect(github_client).to receive(:validate_token_with_reason).ordered.and_return({ valid: true, reason: nil })
+
+        allow(translator).to receive(:translate_strings).and_return({ 'fr' => {} })
+        allow(translator).to receive(:apply_translations).and_return([])
+
+        translator.run
+      end
+    end
+
+    it 'raises error and does not translate when LLM token is invalid' do
+      Dir.mktmpdir do |dir|
+        source_path = File.join(dir, 'locales/en.json')
+        write_json(source_path, { 'greeting' => 'Hello' })
+
+        translator = build_translator(source_file: source_path, target_languages: ['fr'])
+
+        diff = instance_double(Prism::DiffExaminer, unchanged?: false, changed_strings: Prism::DiffExaminer::Result.new(
+          changed_strings: { 'greeting' => 'Hello' },
+          source_locale_root: nil,
+          added_strings: {},
+          modified_strings: {},
+          source_strings: {}
+        ))
+        allow(Prism::DiffExaminer).to receive(:new).and_return(diff)
+
+        engine = instance_double(Prism::Engines::ChatGPT)
+        allow(translator).to receive(:build_engine).and_return(engine)
+        allow(translator).to receive(:build_translation_requests).and_return([
+                                                                               { 'greeting' => { value: 'Hello',
+                                                                                                 locales: ['fr'] } }, []
+                                                                             ])
+
+        allow(engine).to receive(:validate_token).and_return(false)
+        expect(engine).not_to receive(:get_translations)
+
+        expect do
+          translator.run
+        end.to raise_error(/LLM API token validation failed/)
+      end
+    end
+
+    it 'raises error and does not translate when GitHub token is invalid' do
+      Dir.mktmpdir do |dir|
+        source_path = File.join(dir, 'locales/en.json')
+        write_json(source_path, { 'greeting' => 'Hello' })
+
+        translator = build_translator(source_file: source_path, target_languages: ['fr'])
+
+        diff = instance_double(Prism::DiffExaminer, unchanged?: false, changed_strings: Prism::DiffExaminer::Result.new(
+          changed_strings: { 'greeting' => 'Hello' },
+          source_locale_root: nil,
+          added_strings: {},
+          modified_strings: {},
+          source_strings: {}
+        ))
+        allow(Prism::DiffExaminer).to receive(:new).and_return(diff)
+
+        engine = instance_double(Prism::Engines::ChatGPT)
+        allow(translator).to receive(:build_engine).and_return(engine)
+        allow(translator).to receive(:build_translation_requests).and_return([
+                                                                               { 'greeting' => { value: 'Hello',
+                                                                                                 locales: ['fr'] } }, []
+                                                                             ])
+
+        allow(engine).to receive(:validate_token).and_return(true)
+
+        github_client = instance_double(Prism::GitHubClient)
+        allow(Prism::GitHubClient).to receive(:new).and_return(github_client)
+        allow(github_client).to receive(:validate_token_with_reason).and_return({
+                                                                                  valid: false,
+                                                                                  reason: :no_push_permission
+                                                                                })
+
+        expect(engine).not_to receive(:get_translations)
+
+        expect do
+          translator.run
+        end.to raise_error(/does not have push permission/)
+      end
+    end
+
+    it 'raises error when GitHub token is expired' do
+      Dir.mktmpdir do |dir|
+        source_path = File.join(dir, 'locales/en.json')
+        write_json(source_path, { 'greeting' => 'Hello' })
+
+        translator = build_translator(source_file: source_path, target_languages: ['fr'])
+
+        diff = instance_double(Prism::DiffExaminer, unchanged?: false, changed_strings: Prism::DiffExaminer::Result.new(
+          changed_strings: { 'greeting' => 'Hello' },
+          source_locale_root: nil,
+          added_strings: {},
+          modified_strings: {},
+          source_strings: {}
+        ))
+        allow(Prism::DiffExaminer).to receive(:new).and_return(diff)
+
+        engine = instance_double(Prism::Engines::ChatGPT)
+        allow(translator).to receive(:build_engine).and_return(engine)
+        allow(translator).to receive(:build_translation_requests).and_return([
+                                                                               { 'greeting' => { value: 'Hello',
+                                                                                                 locales: ['fr'] } }, []
+                                                                             ])
+
+        allow(engine).to receive(:validate_token).and_return(true)
+
+        github_client = instance_double(Prism::GitHubClient)
+        allow(Prism::GitHubClient).to receive(:new).and_return(github_client)
+        allow(github_client).to receive(:validate_token_with_reason).and_return({ valid: false, reason: :expired })
+
+        expect do
+          translator.run
+        end.to raise_error(/expired or invalid/)
+      end
+    end
+
+    it 'raises error when GitHub token is missing' do
+      Dir.mktmpdir do |dir|
+        source_path = File.join(dir, 'locales/en.json')
+        write_json(source_path, { 'greeting' => 'Hello' })
+
+        translator = build_translator(source_file: source_path, target_languages: ['fr'])
+
+        diff = instance_double(Prism::DiffExaminer, unchanged?: false, changed_strings: Prism::DiffExaminer::Result.new(
+          changed_strings: { 'greeting' => 'Hello' },
+          source_locale_root: nil,
+          added_strings: {},
+          modified_strings: {},
+          source_strings: {}
+        ))
+        allow(Prism::DiffExaminer).to receive(:new).and_return(diff)
+
+        engine = instance_double(Prism::Engines::ChatGPT)
+        allow(translator).to receive(:build_engine).and_return(engine)
+        allow(translator).to receive(:build_translation_requests).and_return([
+                                                                               { 'greeting' => { value: 'Hello',
+                                                                                                 locales: ['fr'] } }, []
+                                                                             ])
+
+        allow(engine).to receive(:validate_token).and_return(true)
+
+        github_client = instance_double(Prism::GitHubClient)
+        allow(Prism::GitHubClient).to receive(:new).and_return(github_client)
+        allow(github_client).to receive(:validate_token_with_reason).and_return({ valid: false, reason: :missing })
+
+        expect do
+          translator.run
+        end.to raise_error(/missing or empty/)
+      end
+    end
+
+    it 'raises error when GitHub token lacks PR permission for pull_request delivery' do
+      Dir.mktmpdir do |dir|
+        source_path = File.join(dir, 'locales/en.json')
+        write_json(source_path, { 'greeting' => 'Hello' })
+
+        translator = build_translator(source_file: source_path, target_languages: ['fr'],
+                                      delivery_method: 'pull_request')
+
+        diff = instance_double(Prism::DiffExaminer, unchanged?: false, changed_strings: Prism::DiffExaminer::Result.new(
+          changed_strings: { 'greeting' => 'Hello' },
+          source_locale_root: nil,
+          added_strings: {},
+          modified_strings: {},
+          source_strings: {}
+        ))
+        allow(Prism::DiffExaminer).to receive(:new).and_return(diff)
+
+        engine = instance_double(Prism::Engines::ChatGPT)
+        allow(translator).to receive(:build_engine).and_return(engine)
+        allow(translator).to receive(:build_translation_requests).and_return([
+                                                                               { 'greeting' => { value: 'Hello',
+                                                                                                 locales: ['fr'] } }, []
+                                                                             ])
+
+        allow(engine).to receive(:validate_token).and_return(true)
+
+        github_client = instance_double(Prism::GitHubClient)
+        allow(Prism::GitHubClient).to receive(:new).and_return(github_client)
+        allow(github_client).to receive(:validate_token_with_reason).and_return({
+                                                                                  valid: false,
+                                                                                  reason: :no_pull_request_permission
+                                                                                })
+
+        expect do
+          translator.run
+        end.to raise_error(/permission to create pull requests/)
+      end
+    end
+
+    it 'validates tokens are checked before translate_strings is called' do
+      Dir.mktmpdir do |dir|
+        source_path = File.join(dir, 'locales/en.json')
+        write_json(source_path, { 'greeting' => 'Hello' })
+
+        translator = build_translator(source_file: source_path, target_languages: ['fr'])
+
+        diff = instance_double(Prism::DiffExaminer, unchanged?: false, changed_strings: Prism::DiffExaminer::Result.new(
+          changed_strings: { 'greeting' => 'Hello' },
+          source_locale_root: nil,
+          added_strings: {},
+          modified_strings: {},
+          source_strings: {}
+        ))
+        allow(Prism::DiffExaminer).to receive(:new).and_return(diff)
+
+        engine = instance_double(Prism::Engines::ChatGPT)
+        allow(translator).to receive(:build_engine).and_return(engine)
+        allow(translator).to receive(:build_translation_requests).and_return([
+                                                                               { 'greeting' => { value: 'Hello',
+                                                                                                 locales: ['fr'] } }, []
+                                                                             ])
+
+        call_order = []
+
+        allow(engine).to receive(:validate_token) do
+          call_order << :llm_validate
+          true
+        end
+
+        github_client = instance_double(Prism::GitHubClient)
+        allow(Prism::GitHubClient).to receive(:new).and_return(github_client)
+        allow(github_client).to receive(:validate_token_with_reason) do
+          call_order << :github_validate
+          { valid: true, reason: nil }
+        end
+
+        allow(engine).to receive(:get_translations) do
+          call_order << :translate
+          { 'translations' => { 'fr' => 'Bonjour' } }
+        end
+
+        allow(translator).to receive(:apply_translations).and_return([])
+
+        translator.run
+
+        expect(call_order.index(:llm_validate)).to be < call_order.index(:translate)
+        expect(call_order.index(:github_validate)).to be < call_order.index(:translate)
+      end
     end
   end
 end

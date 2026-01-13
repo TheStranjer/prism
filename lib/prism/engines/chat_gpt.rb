@@ -7,6 +7,7 @@ module Prism
   module Engines
     class ChatGPT < Base
       OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
+      MODELS_URL = 'https://api.openai.com/v1/models'
 
       def initialize(api_token:, model:, retries: 5, http_client: nil)
         super(api_token: api_token, model: model)
@@ -81,6 +82,15 @@ module Prism
         parsed = JSON.parse(arguments)
         validate_commit_content(parsed, delivery_method)
         parsed
+      end
+
+      def validate_token
+        return false if @api_token.nil? || @api_token.strip.empty?
+
+        response = @http_client.get(MODELS_URL, nil, headers)
+        response.success?
+      rescue StandardError
+        false
       end
 
       private

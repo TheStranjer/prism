@@ -33,6 +33,8 @@ module Prism
       requests, backfilled_keys = build_translation_requests(result)
       return :no_strings if requests.empty?
 
+      validate_tokens(engine)
+
       Logging.log("Changed strings: #{JSON.pretty_generate(result.changed_strings)}")
       Logging.log("Backfilled strings: #{JSON.pretty_generate(backfilled_keys.sort)}") unless backfilled_keys.empty?
 
@@ -306,6 +308,34 @@ module Prism
       yield(remote)
     ensure
       @repo.capture('git remote remove token')
+    end
+
+    def validate_tokens(engine)
+      unless engine.validate_token
+        raise 'LLM API token validation failed. Please check your API token is valid and has access to completions.'
+      end
+
+      client = GitHubClient.new(token: @github_token, repo_slug: @repo_slug)
+      result = client.validate_token_with_reason(delivery_method: delivery_method)
+
+      return if result[:valid]
+
+      message = case result[:reason]
+                when :missing
+                  'GitHub token is missing or empty.'
+                when :expired
+                  'GitHub token is expired or invalid.'
+                when :no_access
+                  "GitHub token does not have access to repository #{@repo_slug}."
+                when :no_push_permission
+                  "GitHub token does not have push permission for repository #{@repo_slug}."
+                when :no_pull_request_permission
+                  "GitHub token does not have permission to create pull requests for repository #{@repo_slug}."
+                else
+                  "GitHub token validation failed: #{result[:message] || 'unknown error'}"
+                end
+
+      raise message
     end
   end
 end

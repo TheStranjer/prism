@@ -245,4 +245,100 @@ RSpec.describe Prism::Engines::ChatGPT do
       end.to raise_error(/HTTP 500/)
     end
   end
+
+  describe '#validate_token' do
+    it 'returns true when token is valid' do
+      stubs = Faraday::Adapter::Test::Stubs.new
+      client = Faraday.new do |builder|
+        builder.adapter :test, stubs
+      end
+
+      stubs.get('https://api.openai.com/v1/models') do |_env|
+        [200, { 'Content-Type' => 'application/json' }, { 'data' => [] }.to_json]
+      end
+
+      engine = described_class.new(api_token: 'valid_token', model: 'gpt-4o-mini', http_client: client)
+      expect(engine.validate_token).to be true
+      stubs.verify_stubbed_calls
+    end
+
+    it 'returns false when token does not exist (nil)' do
+      stubs = Faraday::Adapter::Test::Stubs.new
+      client = Faraday.new do |builder|
+        builder.adapter :test, stubs
+      end
+
+      engine = described_class.new(api_token: nil, model: 'gpt-4o-mini', http_client: client)
+      expect(engine.validate_token).to be false
+    end
+
+    it 'returns false when token is empty string' do
+      stubs = Faraday::Adapter::Test::Stubs.new
+      client = Faraday.new do |builder|
+        builder.adapter :test, stubs
+      end
+
+      engine = described_class.new(api_token: '   ', model: 'gpt-4o-mini', http_client: client)
+      expect(engine.validate_token).to be false
+    end
+
+    it 'returns false when token is expired (401 response)' do
+      stubs = Faraday::Adapter::Test::Stubs.new
+      client = Faraday.new do |builder|
+        builder.adapter :test, stubs
+      end
+
+      stubs.get('https://api.openai.com/v1/models') do |_env|
+        [401, { 'Content-Type' => 'application/json' }, { 'error' => { 'message' => 'Invalid API key' } }.to_json]
+      end
+
+      engine = described_class.new(api_token: 'expired_token', model: 'gpt-4o-mini', http_client: client)
+      expect(engine.validate_token).to be false
+      stubs.verify_stubbed_calls
+    end
+
+    it 'returns false when token does not allow completions (403 response)' do
+      stubs = Faraday::Adapter::Test::Stubs.new
+      client = Faraday.new do |builder|
+        builder.adapter :test, stubs
+      end
+
+      stubs.get('https://api.openai.com/v1/models') do |_env|
+        [403, { 'Content-Type' => 'application/json' }, { 'error' => { 'message' => 'Access denied' } }.to_json]
+      end
+
+      engine = described_class.new(api_token: 'restricted_token', model: 'gpt-4o-mini', http_client: client)
+      expect(engine.validate_token).to be false
+      stubs.verify_stubbed_calls
+    end
+
+    it 'returns false when API returns server error' do
+      stubs = Faraday::Adapter::Test::Stubs.new
+      client = Faraday.new do |builder|
+        builder.adapter :test, stubs
+      end
+
+      stubs.get('https://api.openai.com/v1/models') do |_env|
+        [500, { 'Content-Type' => 'application/json' }, 'Internal Server Error']
+      end
+
+      engine = described_class.new(api_token: 'valid_token', model: 'gpt-4o-mini', http_client: client)
+      expect(engine.validate_token).to be false
+      stubs.verify_stubbed_calls
+    end
+
+    it 'returns false when network error occurs' do
+      stubs = Faraday::Adapter::Test::Stubs.new
+      client = Faraday.new do |builder|
+        builder.adapter :test, stubs
+      end
+
+      stubs.get('https://api.openai.com/v1/models') do |_env|
+        raise Faraday::ConnectionFailed, 'Connection refused'
+      end
+
+      engine = described_class.new(api_token: 'valid_token', model: 'gpt-4o-mini', http_client: client)
+      expect(engine.validate_token).to be false
+    end
+  end
 end

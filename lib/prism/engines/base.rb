@@ -11,6 +11,10 @@ module Prism
       def get_translations(_text, _target_languages)
         raise NotImplementedError, 'Implement in subclass'
       end
+
+      def validate_token
+        raise NotImplementedError, 'Implement in subclass'
+      end
     end
   end
 end
