@@ -242,6 +242,7 @@ module Prism
         source_strings.each_key do |key|
           next if changed_keys.include?(key)
           next if target_strings.key?(key)
+          next if exclusions_handler.excluded?(key, locale)
 
           missing_locales_by_key[key] << locale
         end
@@ -249,7 +250,10 @@ module Prism
 
       requests = {}
       changed_strings.each do |key, value|
-        requests[key] = { value: value, locales: target_locales }
+        locales = target_locales.reject { |locale| exclusions_handler.excluded?(key, locale) }
+        next if locales.empty?
+
+        requests[key] = { value: value, locales: locales }
       end
 
       missing_locales_by_key.each do |key, locales|
@@ -281,6 +285,10 @@ module Prism
 
     def target_locales
       @target_locales ||= @target_languages.reject { |locale| locale == source_locale }
+    end
+
+    def exclusions_handler
+      @exclusions_handler ||= ExclusionsHandler.new(source_file: @source_file)
     end
 
     def with_token_remote

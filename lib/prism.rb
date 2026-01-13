@@ -4,6 +4,7 @@ require 'json'
 require 'yaml'
 
 require_relative 'prism/diff_examiner'
+require_relative 'prism/exclusions_handler'
 require_relative 'prism/locale_file'
 require_relative 'prism/logging'
 require_relative 'prism/translator'

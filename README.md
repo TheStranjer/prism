@@ -56,6 +56,29 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+## Key Exceptions
+
+You can exclude specific translation keys from automatic translation for certain locales by listing them in `.prism/exceptions.json`. This is useful for keys that have been manually translated and should not be overwritten by the automated process.
+
+Create a `.prism/exceptions.json` file in your repository root containing a JSON object where keys are dot-notation translation keys and values are arrays of locale codes to exclude:
+
+```json
+{
+  "app.brand_name": ["pl", "de"],
+  "legal.terms_of_service": ["es", "fr", "ru"],
+  "marketing.tagline": ["ja"]
+}
+```
+
+In this example:
+- `app.brand_name` has manual translations in Polish and German
+- `legal.terms_of_service` has manual translations in Spanish, French, and Russian
+- `marketing.tagline` has a manual translation in Japanese
+
+These keys will still be auto-translated for other target locales not listed in their exclusion arrays.
+
+The action searches for the exceptions file starting from the source file's directory and walking up to the repository root.
+
 ## Notes
 
 - The action expects the repo to be checked out with full history (`fetch-depth: 0`) so it can inspect diffs.
