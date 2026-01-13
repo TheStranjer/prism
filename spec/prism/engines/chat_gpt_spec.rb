@@ -247,18 +247,35 @@ RSpec.describe Prism::Engines::ChatGPT do
   end
 
   describe '#validate_token' do
-    it 'returns true when token is valid' do
+    it 'returns true when token is valid and model is available' do
       stubs = Faraday::Adapter::Test::Stubs.new
       client = Faraday.new do |builder|
         builder.adapter :test, stubs
       end
 
       stubs.get('https://api.openai.com/v1/models') do |_env|
-        [200, { 'Content-Type' => 'application/json' }, { 'data' => [] }.to_json]
+        [200, { 'Content-Type' => 'application/json' },
+         { 'data' => [{ 'id' => 'gpt-4o-mini' }, { 'id' => 'gpt-4' }] }.to_json]
       end
 
       engine = described_class.new(api_token: 'valid_token', model: 'gpt-4o-mini', http_client: client)
       expect(engine.validate_token).to be true
+      stubs.verify_stubbed_calls
+    end
+
+    it 'returns false when model is not in available models' do
+      stubs = Faraday::Adapter::Test::Stubs.new
+      client = Faraday.new do |builder|
+        builder.adapter :test, stubs
+      end
+
+      stubs.get('https://api.openai.com/v1/models') do |_env|
+        [200, { 'Content-Type' => 'application/json' },
+         { 'data' => [{ 'id' => 'gpt-4' }, { 'id' => 'gpt-3.5-turbo' }] }.to_json]
+      end
+
+      engine = described_class.new(api_token: 'valid_token', model: 'gpt-4o-mini', http_client: client)
+      expect(engine.validate_token).to be false
       stubs.verify_stubbed_calls
     end
 

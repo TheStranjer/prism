@@ -88,7 +88,11 @@ module Prism
         return false if @api_token.nil? || @api_token.strip.empty?
 
         response = @http_client.get(MODELS_URL, nil, headers)
-        response.success?
+        return false unless response.success?
+
+        body = JSON.parse(response.body)
+        available_models = body['data']&.map { |m| m['id'] } || []
+        available_models.include?(@model)
       rescue StandardError
         false
       end
