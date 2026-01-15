@@ -148,6 +148,34 @@ RSpec.describe Prism::Translator do
     end
   end
 
+  it 'processes initial runs even when the source file is unchanged' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.json')
+      write_json(source_path, { 'greeting' => 'Hello' })
+
+      translator = build_translator(source_file: source_path, target_languages: ['fr'])
+
+      diff = instance_double(Prism::DiffExaminer, unchanged?: true, changed_strings: Prism::DiffExaminer::Result.new(
+        changed_strings: {},
+        source_locale_root: nil,
+        added_strings: {},
+        modified_strings: {},
+        source_strings: { 'greeting' => 'Hello' }
+      ))
+      allow(Prism::DiffExaminer).to receive(:new).and_return(diff)
+
+      engine = instance_double(Prism::Engines::ChatGPT)
+      allow(translator).to receive(:build_engine).and_return(engine)
+      allow(translator).to receive(:validate_tokens)
+      allow(translator).to receive(:translate_strings).and_return({ 'fr' => { 'greeting' => 'Bonjour' } })
+      allow(translator).to receive(:apply_translations).and_return([])
+
+      result = translator.run
+
+      expect(result).to eq(:no_updates)
+    end
+  end
+
   it 'pushes directly to the current branch with LLM commit message when llm_commit_messages is true' do
     Dir.mktmpdir do |dir|
       source_path = File.join(dir, 'locales/en.json')

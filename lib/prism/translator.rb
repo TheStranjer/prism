@@ -26,11 +26,12 @@ module Prism
 
     def run
       diff = DiffExaminer.new(repo: @repo, commit: @commit, source_file: @source_file)
-      return :unchanged if diff.unchanged?
+      unchanged = diff.unchanged?
 
       engine = build_engine
       result = diff.changed_strings
       requests, backfilled_keys = build_translation_requests(result)
+      return :unchanged if unchanged && requests.empty? && backfilled_keys.empty?
       return :no_strings if requests.empty?
 
       validate_tokens(engine)
