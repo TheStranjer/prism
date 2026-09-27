@@ -27,6 +27,28 @@ Auto-translate i18n JSON/YAML files when the source language changes. The action
 - `delivery_method` (optional): `pull_request` (default) or `push`. Use `push` to commit directly to the current branch.
 - `llm_commit_messages` (optional): `true` or `false` (default). When enabled, uses the LLM to generate descriptive commit messages based on the translation changes. When disabled, uses a generic "Update translations" message.
 
+## GitHub token permissions
+
+The `github_token` is used to push the translation branch over HTTPS and, in `pull_request` mode, to read the default branch and open a pull request via the REST API. The default `GITHUB_TOKEN` works as long as the job-level `permissions` block (shown in the example below) grants what the delivery method needs. If you use a personal access token (PAT) instead:
+
+### Fine-grained PAT
+
+Repository access: **Only select repositories** (the target repo). Under *Repository permissions*:
+
+| Permission | Access | Needed for |
+| --- | --- | --- |
+| Contents | Read and write | Pushing the translation branch (both delivery methods) |
+| Pull requests | Read and write | Opening and checking for PRs (`delivery_method: pull_request`) |
+| Metadata | Read (automatic) | Reading the repository's default branch; required for any fine-grained PAT |
+
+For `delivery_method: push`, **Pull requests** is not required; **Contents: Read and write** is sufficient.
+
+### Classic PAT
+
+The `repo` scope covers everything the action does (push, branch reads, PR creation).
+
+The action validates the token up front and fails fast with a specific reason (missing, expired, no push permission, or no pull permission for PR delivery) rather than after translating.
+
 ## Example workflow
 
 ```yaml
