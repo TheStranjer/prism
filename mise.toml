@@ -1,2 +1,6 @@
+# Keep this pin in sync with .ruby-version, which is the single source of truth
+# read by action.yml, .github/workflows/ci.yml and .rubocop.yml. It has to be
+# repeated here because this project's mise uses the ruby plugin, which does not
+# pick up .ruby-version on its own.
 [tools]
 ruby = "4.0.0"

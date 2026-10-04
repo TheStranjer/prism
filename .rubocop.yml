@@ -3,7 +3,9 @@
 AllCops:
   NewCops: enable
   SuggestExtensions: false
-  TargetRubyVersion: 3.0
+  # TargetRubyVersion is intentionally unset: RuboCop then reads .ruby-version,
+  # the single source of truth for the Ruby version used by the action, by CI
+  # and here. Hardcoding it made linting inspect a language version nobody ran.
 
 Style/Documentation:
   Enabled: false
