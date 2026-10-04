@@ -242,6 +242,7 @@ module Prism
       source_strings = result.source_strings || {}
       stale_keys ||= stale_keys_by_locale(source_strings, root_key, translated_keys_by_locale(translations))
       updated_paths = []
+      shape_collisions = {}
       target_locales.each do |locale|
         target_path = LocaleFile.target_path_for(@source_file, locale)
         format = target_path.end_with?('.json') ? :json : :yaml
@@ -261,6 +262,7 @@ module Prism
         end
 
         has_changes = true if prune_stale_keys(locale_file, stale_keys[locale] || [])
+        shape_collisions[locale] = locale_file.collisions unless locale_file.collisions.empty?
 
         next unless has_changes
 
@@ -268,8 +270,12 @@ module Prism
         File.write(target_path, serialized)
         updated_paths << target_path
       end
-
+      log_shape_collisions(shape_collisions)
       updated_paths
+    end
+
+    def log_shape_collisions(shape_collisions)
+      Logging.log("Shape collisions: #{JSON.pretty_generate(shape_collisions)}") unless shape_collisions.empty?
     end
 
     def prune_stale_keys(locale_file, stale_keys)

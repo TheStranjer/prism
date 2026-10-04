@@ -694,6 +694,7 @@ RSpec.describe Prism::Translator do
         stub_push_delivery(translator)
 
         expect(translator.run).to eq(:pushed)
+        expect(logged_output).not_to include('Shape collisions')
         expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({ 'greeting' => 'Bonjour' })
       end
     end
@@ -744,6 +745,83 @@ RSpec.describe Prism::Translator do
         expect(translator.run).to eq(:pushed)
         expect(logged_output).to include("Stale keys: #{JSON.pretty_generate({ 'fr' => ['gone'] })}")
         expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({ 'a' => { 'b' => 'Pomme' } })
+      end
+    end
+
+    it 'logs the discarded translation as a shape collision in a run that grows a string into a namespace' do
+      Dir.mktmpdir do |dir|
+        source_path = File.join(dir, 'locales/en.json')
+        write_json(source_path, { 'a' => { 'b' => 'Apple' } })
+        write_json(File.join(dir, 'locales/fr.json'), { 'a' => 'Ancien', 'gone' => 'Parti' })
+
+        translator = build_translator(source_file: source_path, target_languages: ['fr'], delivery_method: 'push')
+        allow(Prism::DiffExaminer).to receive(:new).and_return(grown_namespace_diff(unchanged: true))
+        allow(translator).to receive(:translate_strings).and_return({ 'fr' => { 'a.b' => 'Pomme' } })
+        stub_push_delivery(translator)
+
+        expect(translator.run).to eq(:pushed)
+        collision = { 'operation' => 'write', 'path' => 'a.b', 'collision_path' => 'a', 'value' => 'Ancien' }
+        expect(logged_output).to include("Shape collisions: #{JSON.pretty_generate({ 'fr' => [collision] })}")
+        expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({ 'a' => { 'b' => 'Pomme' } })
+      end
+    end
+  end
+
+  describe 'shape collisions' do
+    it 'logs the string a namespace write discards when the source string grows' do
+      Dir.mktmpdir do |dir|
+        source_path = File.join(dir, 'locales/en.json')
+        write_json(source_path, { 'a' => { 'b' => 'Apple' } })
+        write_json(File.join(dir, 'locales/fr.json'), { 'a' => 'Ancien' })
+
+        translator = build_translator(source_file: source_path, target_languages: ['fr'])
+        result = Prism::DiffExaminer::Result.new(
+          source_locale_root: nil,
+          source_strings: { 'a.b' => 'Apple' }
+        )
+
+        translator.send(:apply_translations, { 'fr' => { 'a.b' => 'Pomme' } }, result)
+
+        collision = { 'operation' => 'write', 'path' => 'a.b', 'collision_path' => 'a', 'value' => 'Ancien' }
+        expect(logged_output).to include("Shape collisions: #{JSON.pretty_generate({ 'fr' => [collision] })}")
+      end
+    end
+
+    it 'logs the stale removal blocked by the string the same pass wrote over its namespace' do
+      Dir.mktmpdir do |dir|
+        source_path = File.join(dir, 'locales/en.json')
+        write_json(source_path, { 'a' => 'Apple', 'keep' => 'Keep' })
+        write_json(File.join(dir, 'locales/fr.json'), { 'a' => { 'b' => 'Ameise' } })
+
+        translator = build_translator(source_file: source_path, target_languages: ['fr'])
+        result = Prism::DiffExaminer::Result.new(
+          source_locale_root: nil,
+          source_strings: { 'a' => 'Apple', 'keep' => 'Keep' }
+        )
+
+        translator.send(:apply_translations, { 'fr' => { 'a' => 'Pomme' } }, result)
+
+        collision = { 'operation' => 'removal', 'path' => 'a.b', 'collision_path' => 'a', 'value' => 'Pomme' }
+        expect(logged_output).to include("Shape collisions: #{JSON.pretty_generate({ 'fr' => [collision] })}")
+        expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({ 'a' => 'Pomme' })
+      end
+    end
+
+    it 'logs no shape collisions when every write and prune keeps the file shapes' do
+      Dir.mktmpdir do |dir|
+        source_path = File.join(dir, 'locales/en.json')
+        write_json(source_path, { 'greeting' => 'Hello' })
+        write_json(File.join(dir, 'locales/fr.json'), { 'greeting' => 'Bonjour', 'gone' => 'Parti' })
+
+        translator = build_translator(source_file: source_path, target_languages: ['fr'])
+        result = Prism::DiffExaminer::Result.new(
+          source_locale_root: nil,
+          source_strings: { 'greeting' => 'Hello' }
+        )
+
+        translator.send(:apply_translations, { 'fr' => { 'greeting' => 'Bonjour' } }, result)
+
+        expect(logged_output).not_to include('Shape collisions')
       end
     end
   end
