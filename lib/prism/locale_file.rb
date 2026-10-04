@@ -75,13 +75,6 @@ module Prism
 
     private
 
-    # The root key is only trusted when it matches the file's locale hint or
-    # the root detected in the source file. A lone top-level key with a hash
-    # value is not enough on its own: a target file that only translated one
-    # section of the source (say {"checkout" => {...}}) is a rootless file
-    # whose keys are "checkout.*", not a locale-rooted file. Treating that
-    # namespace as a root would flatten its keys out of alignment with the
-    # source and make every entry look stale, so pruning would delete it.
     def detect_root_key(data, locale_hint, source_root_key)
       return nil unless data.is_a?(Hash)
 

@@ -56,22 +56,30 @@ module Prism
       return {} if content.strip.empty?
 
       data = JSON.parse(content)
-      unless data.is_a?(Hash)
-        Logging.log("Warning: #{@exceptions_path} must contain a JSON object, ignoring")
-        return {}
-      end
+      return {} unless valid_exceptions?(data)
 
       data.each_with_object({}) do |(key, locales), result|
         next unless key.is_a?(String)
 
-        if locales.is_a?(Array)
-          valid_locales = locales.grep(String)
-          result[key] = Set.new(valid_locales) if valid_locales.any?
-        end
+        record_locales(key, locales, result)
       end
     rescue JSON::ParserError => e
       Logging.log("Warning: Failed to parse #{@exceptions_path}: #{e.message}")
       {}
+    end
+
+    def valid_exceptions?(data)
+      return true if data.is_a?(Hash)
+
+      Logging.log("Warning: #{@exceptions_path} must contain a JSON object, ignoring")
+      false
+    end
+
+    def record_locales(key, locales, result)
+      return unless locales.is_a?(Array)
+
+      valid_locales = locales.grep(String)
+      result[key] = Set.new(valid_locales) if valid_locales.any?
     end
   end
 end

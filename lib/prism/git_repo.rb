@@ -45,8 +45,6 @@ module Prism
     end
 
     def commit(message)
-      # Use array form to bypass shell interpretation - this safely handles
-      # messages with parentheses, quotes, backticks, and other special characters
       Open3.capture2e('git', 'commit', '-m', message, chdir: @path)
     end
 

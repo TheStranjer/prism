@@ -113,6 +113,16 @@ The Ruby version is declared once, in `.ruby-version`:
 
 Run everything with `./local-tests.sh`, which runs RSpec and then RuboCop.
 
+### Linting
+
+RuboCop loads the `officer_neetzsche` plugin through `plugins:` in `.rubocop.yml`. Every `NEETzsche/*` cop it ships is enabled, and they shape this source:
+
+- `NEETzsche/NoComments` keeps comments out of the Ruby files, so why a method exists goes in its name, in the specs, or here. `action.yml`, `.rubocop.yml` and `mise.toml` are not Ruby, so their comments stay.
+- `NEETzsche/MultilineConditionalBody` gives an `if`, `unless`, `while` or `until` body room for one statement, which is why branches delegate to small private methods.
+- `NEETzsche/StatementModifier` writes each single-statement body as a modifier, so a guard stays on one line.
+
+`Layout/LineLength` still caps a line at 120 characters and those cops ignore it, so a guard that no longer fits keeps its condition in a predicate and its message in a method instead of wrapping.
+
 ### Installing gems for each Ruby
 
 Bundler installs into the gem home of whichever Ruby ran `bundle install`, so every interpreter on a machine needs its own install. When `mise install` adds a Ruby, or you switch versions, `bundle exec` fails with `Bundler::GemNotFound` even though `Gemfile.lock` is complete and correct. With the new Ruby active:

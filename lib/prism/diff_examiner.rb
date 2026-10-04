@@ -39,18 +39,8 @@ module Prism
       old_flat = old_locale_file.flattened_strings
       new_flat = new_locale_file.flattened_strings
 
-      added = {}
-      modified = {}
-      new_flat.each do |key, value|
-        unless old_flat.key?(key)
-          added[key] = value
-          next
-        end
-
-        next if old_flat[key] == value
-
-        modified[key] = value
-      end
+      added = new_flat.reject { |key, _| old_flat.key?(key) }
+      modified = new_flat.select { |key, value| old_flat.key?(key) && old_flat[key] != value }
 
       Result.new(
         changed_strings: added.merge(modified),
