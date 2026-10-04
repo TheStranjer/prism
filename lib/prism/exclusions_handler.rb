@@ -65,7 +65,7 @@ module Prism
         next unless key.is_a?(String)
 
         if locales.is_a?(Array)
-          valid_locales = locales.select { |l| l.is_a?(String) }
+          valid_locales = locales.grep(String)
           result[key] = Set.new(valid_locales) if valid_locales.any?
         end
       end

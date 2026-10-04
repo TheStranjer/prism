@@ -125,11 +125,11 @@ module Prism
       end
 
       def translation_tool(target_languages)
-        locale_properties = target_languages.each_with_object({}) do |locale, hash|
-          hash[locale] = {
+        locale_properties = target_languages.to_h do |locale|
+          [locale, {
             type: 'string',
             description: "Translation for locale #{locale}."
-          }
+          }]
         end
 
         {
