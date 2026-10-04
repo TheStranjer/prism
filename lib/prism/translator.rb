@@ -271,10 +271,10 @@ module Prism
       updated_paths
     end
 
-    def prune_stale_keys(locale_file, stale_keys, written_keys)
+    def prune_stale_keys(locale_file, stale_keys, keys_written_this_pass)
       removed = false
       stale_keys.each do |key|
-        next if written_keys.any? { |written| written.start_with?("#{key}.") }
+        next if keys_written_this_pass.any? { |written| written.start_with?("#{key}.") }
 
         removed = true if locale_file.remove_value(key)
       end
@@ -324,10 +324,6 @@ module Prism
         requests[key] = { value: value, locales: locales }
       end
 
-      # The second value is what run logs as "Backfilled strings", so it holds
-      # exactly the keys handed to the engine here: a key the source holds as a
-      # hash, number or nil has no text to translate, no locale is asked for it,
-      # and logging it would send the next reader hunting an entry no run wrote.
       backfilled_keys = []
       missing_locales_by_key.each do |key, locales|
         value = source_strings[key]

@@ -377,6 +377,54 @@ RSpec.describe Prism::Translator do
     end
   end
 
+  it 'prunes the grown target string when every nested key of the new namespace is excluded for the locale' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.json')
+      write_json(source_path, { 'a' => { 'b' => 'Apple', 'c' => 'Cherry' } })
+      write_json(File.join(dir, '.prism/exceptions.json'), { 'a.b' => ['fr'], 'a.c' => ['fr'] })
+      write_json(File.join(dir, 'locales/fr.json'), { 'a' => 'Ancien' })
+
+      translator = build_translator(source_file: source_path, target_languages: ['fr'])
+      result = Prism::DiffExaminer::Result.new(
+        source_locale_root: nil,
+        source_strings: { 'a.b' => 'Apple', 'a.c' => 'Cherry' }
+      )
+
+      requests, = translator.send(:build_translation_requests, result)
+      expect(requests).to be_empty
+      expect(translator.send(:stale_keys_by_locale, result.source_strings)).to eq({ 'fr' => ['a'] })
+
+      updated_paths = translator.send(:apply_translations, {}, result)
+
+      expect(updated_paths).to contain_exactly(File.join(dir, 'locales/fr.json'))
+      expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({})
+    end
+  end
+
+  it 'lets the translated nested key take over the grown target string while its siblings stay excluded' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.json')
+      write_json(source_path, { 'a' => { 'b' => 'Apple', 'c' => 'Cherry' } })
+      write_json(File.join(dir, '.prism/exceptions.json'), { 'a.b' => ['fr'] })
+      write_json(File.join(dir, 'locales/fr.json'), { 'a' => 'Ancien' })
+
+      translator = build_translator(source_file: source_path, target_languages: ['fr'])
+      result = Prism::DiffExaminer::Result.new(
+        source_locale_root: nil,
+        source_strings: { 'a.b' => 'Apple', 'a.c' => 'Cherry' }
+      )
+
+      requests, = translator.send(:build_translation_requests, result)
+      expect(requests.keys).to contain_exactly('a.c')
+      expect(requests['a.c'][:locales]).to eq(['fr'])
+
+      updated_paths = translator.send(:apply_translations, { 'fr' => { 'a.c' => 'Cerise' } }, result)
+
+      expect(updated_paths).to contain_exactly(File.join(dir, 'locales/fr.json'))
+      expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({ 'a' => { 'c' => 'Cerise' } })
+    end
+  end
+
   it 'keeps a target file whose translations sit under a single shared namespace' do
     Dir.mktmpdir do |dir|
       source_path = File.join(dir, 'locales/en.json')
@@ -512,10 +560,7 @@ RSpec.describe Prism::Translator do
     end
   end
 
-  # The backfilled list only names keys a locale was asked about, so a target file
-  # whose only gap is a key the source holds as a hash leaves the run with nothing
-  # to do: it stops as unchanged and never logs that key as backfilled.
-  it 'returns unchanged when the only missing keys have no translatable source value' do
+  it 'returns unchanged without a backfilled log when the only missing keys have no translatable source value' do
     Dir.mktmpdir do |dir|
       source_path = File.join(dir, 'locales/en.json')
       write_json(source_path, { 'greeting' => 'Hello' })
@@ -578,6 +623,16 @@ RSpec.describe Prism::Translator do
       ))
     end
 
+    def grown_namespace_diff(unchanged:)
+      instance_double(Prism::DiffExaminer, unchanged?: unchanged, changed_strings: Prism::DiffExaminer::Result.new(
+        changed_strings: {},
+        source_locale_root: nil,
+        added_strings: {},
+        modified_strings: {},
+        source_strings: { 'a.b' => 'Apple' }
+      ))
+    end
+
     it 'prunes target entries after a deletion-only source change' do
       Dir.mktmpdir do |dir|
         source_path = File.join(dir, 'locales/en.json')
@@ -605,6 +660,22 @@ RSpec.describe Prism::Translator do
 
         expect(translator.run).to eq(:pushed)
         expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({ 'greeting' => 'Bonjour' })
+      end
+    end
+
+    it 'prunes the grown target string through a full run when every nested key of it is excluded' do
+      Dir.mktmpdir do |dir|
+        source_path = File.join(dir, 'locales/en.json')
+        write_json(source_path, { 'a' => { 'b' => 'Apple' } })
+        write_json(File.join(dir, '.prism/exceptions.json'), { 'a.b' => ['fr'] })
+        write_json(File.join(dir, 'locales/fr.json'), { 'a' => 'Ancien' })
+
+        translator = build_translator(source_file: source_path, target_languages: ['fr'], delivery_method: 'push')
+        allow(Prism::DiffExaminer).to receive(:new).and_return(grown_namespace_diff(unchanged: true))
+        stub_push_delivery(translator)
+
+        expect(translator.run).to eq(:pushed)
+        expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({})
       end
     end
   end
@@ -1618,7 +1689,7 @@ RSpec.describe Prism::Translator do
   end
 
   describe 'request building details' do
-    it 'skips backfilled keys whose source value is not a string' do
+    it 'sends no request and logs no backfilled entry for a source key that is a hash, number or nil' do
       Dir.mktmpdir do |dir|
         source_path = File.join(dir, 'locales/en.json')
         write_json(source_path, { 'greeting' => 'Hello' })
@@ -1635,9 +1706,6 @@ RSpec.describe Prism::Translator do
         requests, backfilled = translator.send(:build_translation_requests, result)
 
         expect(requests.keys).to contain_exactly('greeting')
-        # A run logs the second value as "Backfilled strings", so it has to name the
-        # keys a locale was actually asked about: reporting a skipped key here would
-        # point the next reader at an entry no locale was ever asked to write.
         expect(backfilled).to contain_exactly('greeting')
       end
     end
