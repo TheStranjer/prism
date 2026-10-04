@@ -31,19 +31,21 @@ module Prism
       engine = build_engine
       result = diff.changed_strings
       requests, backfilled_keys = build_translation_requests(result)
-      return :unchanged if unchanged && requests.empty? && backfilled_keys.empty?
-      return :no_strings if requests.empty?
+      stale_keys = stale_keys_by_locale(result.source_strings || {})
+      return :unchanged if unchanged && requests.empty? && backfilled_keys.empty? && stale_keys.empty?
+      return :no_strings if requests.empty? && stale_keys.empty?
 
       validate_tokens(engine)
 
       Logging.log("Changed strings: #{JSON.pretty_generate(result.changed_strings)}")
       Logging.log("Backfilled strings: #{JSON.pretty_generate(backfilled_keys.sort)}") unless backfilled_keys.empty?
+      Logging.log("Stale keys: #{JSON.pretty_generate(stale_keys.sort.to_h)}") unless stale_keys.empty?
 
       translations = translate_strings(engine, requests)
 
       Logging.log("Translations: #{JSON.pretty_generate(translations)}")
 
-      updated_paths = apply_translations(translations, result.source_locale_root)
+      updated_paths = apply_translations(translations, result)
       return :no_updates if updated_paths.empty?
 
       Logging.log("Updated locale files: #{JSON.pretty_generate(updated_paths)}")
@@ -190,11 +192,11 @@ module Prism
       translations
     end
 
-    def apply_translations(translations, root_key)
+    def apply_translations(translations, result)
+      root_key = result.source_locale_root
+      source_strings = result.source_strings || {}
       updated_paths = []
-      translations.each do |locale, values|
-        next if locale == source_locale
-
+      target_locales.each do |locale|
         target_path = LocaleFile.target_path_for(@source_file, locale)
         format = target_path.end_with?('.json') ? :json : :yaml
 
@@ -211,9 +213,14 @@ module Prism
         existing_strings = locale_file.flattened_strings
         has_changes = false
 
-        values.each do |key, translation|
+        (translations[locale] || {}).each do |key, translation|
           has_changes = true if existing_strings[key] != translation
           locale_file.set_value(key, translation)
+        end
+
+        stale_keys = existing_strings.keys - source_strings.keys
+        stale_keys.each do |key|
+          has_changes = true if locale_file.remove_value(key)
         end
 
         next unless has_changes
@@ -224,6 +231,15 @@ module Prism
       end
 
       updated_paths
+    end
+
+    def stale_keys_by_locale(source_strings)
+      target_locales.each_with_object({}) do |locale, stale|
+        target_path = LocaleFile.target_path_for(@source_file, locale)
+        target_strings = load_flattened_strings(target_path, locale)
+        stale_keys = target_strings.keys - source_strings.keys
+        stale[locale] = stale_keys unless stale_keys.empty?
+      end
     end
 
     def ensure_root(locale_file, locale, source_root)
