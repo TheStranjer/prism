@@ -5,7 +5,7 @@ require 'yaml'
 
 module Prism
   class LocaleFile
-    attr_reader :root_key, :data
+    attr_reader :root_key, :data, :collisions
 
     def self.locale_from_path(path)
       base = File.basename(path)
@@ -23,6 +23,7 @@ module Prism
       @data = data || {}
       @locale_hint = locale_hint
       @root_key = detect_root_key(@data, locale_hint, source_root_key)
+      @collisions = []
     end
 
     def flattened_strings
@@ -34,7 +35,8 @@ module Prism
       keys = path.split('.')
       root = root_key ? (@data[root_key] ||= {}) : @data
       cursor = root
-      keys[0..-2].each do |key|
+      keys[0..-2].each_with_index do |key, depth|
+        record_collision('write', path, keys, depth, cursor[key]) if shape_collision?(cursor, key)
         cursor[key] = {} unless cursor[key].is_a?(Hash)
         cursor = cursor[key]
       end
@@ -48,7 +50,8 @@ module Prism
 
       cursor = root
       parents = []
-      keys[0..-2].each do |key|
+      keys[0..-2].each_with_index do |key, depth|
+        record_collision('removal', path, keys, depth, cursor[key]) if shape_collision?(cursor, key)
         return nil unless cursor[key].is_a?(Hash)
 
         parents << [cursor, key]
@@ -74,6 +77,19 @@ module Prism
     end
 
     private
+
+    def shape_collision?(cursor, key)
+      cursor.key?(key) && !cursor[key].is_a?(Hash)
+    end
+
+    def record_collision(operation, path, keys, depth, value)
+      @collisions << {
+        'operation' => operation,
+        'path' => path,
+        'collision_path' => keys[0..depth].join('.'),
+        'value' => value
+      }
+    end
 
     def detect_root_key(data, locale_hint, source_root_key)
       return nil unless data.is_a?(Hash)
