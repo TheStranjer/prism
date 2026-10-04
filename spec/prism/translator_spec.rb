@@ -45,7 +45,6 @@ RSpec.describe Prism::Translator do
     engine
   end
 
-  # A diff with one changed key, so every guarded run below has something to translate.
   def changed_greeting_diff
     instance_double(Prism::DiffExaminer, unchanged?: false, changed_strings: Prism::DiffExaminer::Result.new(
       changed_strings: { 'greeting' => 'Hello' },
@@ -56,8 +55,6 @@ RSpec.describe Prism::Translator do
     ))
   end
 
-  # Stubs a run from token validation through a committed locales/fr.json, so examples
-  # can drive the guards that follow: commit verification, push and delivery.
   def stub_translations_committed(translator, updated_path)
     engine = instance_double(Prism::Engines::ChatGPT)
     allow(engine).to receive(:validate_token).and_return(true)
@@ -83,8 +80,6 @@ RSpec.describe Prism::Translator do
     repo
   end
 
-  # One client double stands in for both GitHubClient builds of a run: token validation
-  # and post-push verification. Examples override the calls they care about.
   def stub_github_client
     client = instance_double(Prism::GitHubClient)
     allow(Prism::GitHubClient).to receive(:new).with(token: 'gh', repo_slug: 'org/repo').and_return(client)
@@ -325,10 +320,6 @@ RSpec.describe Prism::Translator do
     end
   end
 
-  # The target file here holds its only translation under a lone top-level
-  # namespace ("a"). That key must not be mistaken for a locale root: the
-  # stale hash subtree is replaced by the new string value instead of being
-  # flattened against a bogus root and pruned away.
   it 'overwrites a stale nested target subtree when the source key becomes a string' do
     Dir.mktmpdir do |dir|
       source_path = File.join(dir, 'locales/en.json')
@@ -348,10 +339,6 @@ RSpec.describe Prism::Translator do
     end
   end
 
-  # The mirror image of the example above: the target holds a string at "a"
-  # while the source has grown a namespace under it. Pruning runs after the
-  # writes, so the stale key names the very subtree the pass just translated.
-  # Removing it would ship the file without the translation that was paid for.
   it 'keeps a fresh target subtree when the source string becomes a namespace' do
     Dir.mktmpdir do |dir|
       source_path = File.join(dir, 'locales/en.json')
@@ -371,8 +358,6 @@ RSpec.describe Prism::Translator do
     end
   end
 
-  # Guarding the fresh subtree must not switch pruning off for the rest of the
-  # file: the unrelated stale entry next to it still goes.
   it 'still prunes unrelated stale keys in a pass that grows a string into a namespace' do
     Dir.mktmpdir do |dir|
       source_path = File.join(dir, 'locales/en.json')

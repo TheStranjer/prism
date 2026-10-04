@@ -34,21 +34,18 @@ end
 
 parser.parse!
 
+def abort_with(message)
+  warn message
+  exit 1
+end
+
 required = %i[source_file target_languages author_name author_email engine api_token model repo commit github_token]
 missing = required.select { |key| options[key].nil? || options[key].to_s.empty? }
-unless missing.empty?
-  warn "Missing required options: #{missing.join(', ')}"
-  exit 1
-end
-if options[:retries].nil? || options[:retries].negative?
-  warn 'Retries must be a non-negative integer'
-  exit 1
-end
+abort_with("Missing required options: #{missing.join(', ')}") unless missing.empty?
+abort_with('Retries must be a non-negative integer') if options[:retries].nil? || options[:retries].negative?
+
 delivery_method = options[:delivery_method].to_s.strip.downcase
-unless %w[pull_request push].include?(delivery_method)
-  warn 'Delivery method must be pull_request or push'
-  exit 1
-end
+abort_with('Delivery method must be pull_request or push') unless %w[pull_request push].include?(delivery_method)
 
 languages = options[:target_languages].split(',').map(&:strip).reject(&:empty?)
 

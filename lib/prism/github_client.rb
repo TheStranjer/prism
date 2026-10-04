@@ -62,23 +62,17 @@ module Prism
     end
 
     def validate_token_with_reason(delivery_method:)
-      return { valid: false, reason: :missing } if @token.nil? || @token.strip.empty?
+      return invalid(:missing) if @token.nil? || @token.strip.empty?
 
       response = @http_client.get("/repos/#{@repo_slug}", nil, headers)
-
-      unless response.success?
-        reason = response.status == 401 ? :expired : :no_access
-        return { valid: false, reason: reason }
-      end
+      return invalid_for_status(response) unless response.success?
 
       data = JSON.parse(response.body)
       permissions = data['permissions'] || {}
 
-      return { valid: false, reason: :no_push_permission } unless permissions['push']
+      return invalid(:no_push_permission) unless permissions['push']
 
-      if delivery_method == 'pull_request' && !permissions['pull']
-        return { valid: false, reason: :no_pull_request_permission }
-      end
+      return invalid(:no_pull_request_permission) if delivery_method == 'pull_request' && !permissions['pull']
 
       { valid: true, reason: nil }
     rescue StandardError => e
@@ -86,6 +80,14 @@ module Prism
     end
 
     private
+
+    def invalid(reason)
+      { valid: false, reason: reason }
+    end
+
+    def invalid_for_status(response)
+      invalid(response.status == 401 ? :expired : :no_access)
+    end
 
     def headers
       {

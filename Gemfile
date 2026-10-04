@@ -10,5 +10,6 @@ group :test do
 end
 
 group :development do
+  gem 'officer_neetzsche', require: false
   gem 'rubocop'
 end

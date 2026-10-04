@@ -24,27 +24,11 @@ module Prism
           response = @http_client.post(OPENAI_URL, payload.to_json, headers)
           return error_payload("HTTP #{response.status}: #{response.body}") unless response.success?
 
-          body = JSON.parse(response.body)
-          message = body.dig('choices', 0, 'message') || {}
-          arguments = tool_arguments_from(message)
-          unless arguments
-            last_error = 'No tool call or JSON content in response'
-            messages = retry_messages(messages, last_error)
-            next
-          end
+          translation, reason = parse_translation_response(response, target_languages)
+          return translation if translation
 
-          parsed = JSON.parse(arguments)
-          unless parsed.is_a?(Hash)
-            last_error = 'Tool call arguments are not a JSON object'
-            messages = retry_messages(messages, last_error)
-            next
-          end
-
-          missing_locales = missing_locales(parsed['translations'], target_languages)
-          return parsed if missing_locales.empty?
-
-          last_error = "Missing translations for locales: #{missing_locales.join(', ')}"
-          messages = retry_messages(messages, last_error)
+          last_error = reason
+          messages = retry_messages(messages, reason)
         end
 
         error_payload(last_error || 'No tool call or JSON content in response')
@@ -160,6 +144,21 @@ module Prism
         }
       end
 
+      def parse_translation_response(response, target_languages)
+        body = JSON.parse(response.body)
+        message = body.dig('choices', 0, 'message') || {}
+        arguments = tool_arguments_from(message)
+        return [nil, 'No tool call or JSON content in response'] unless arguments
+
+        parsed = JSON.parse(arguments)
+        return [nil, 'Tool call arguments are not a JSON object'] unless parsed.is_a?(Hash)
+
+        absent_locales = missing_locales(parsed['translations'], target_languages)
+        return [parsed, nil] if absent_locales.empty?
+
+        [nil, "Missing translations for locales: #{absent_locales.join(', ')}"]
+      end
+
       def tool_arguments_from(message)
         tool_call = message['tool_calls']&.first
         arguments = tool_call&.dig('function', 'arguments')
@@ -228,78 +227,86 @@ module Prism
                'Write a concise, descriptive commit message that captures the essence of the translation changes, ' \
                'informed by understanding what was changed in the original source commit.'
 
-        if delivery_method == 'pull_request'
-          base + "\n\nAlso write a pull request title and description. " \
-                 'The PR title should be short and action-oriented. ' \
-                 'The PR description should summarize the changes and provide context for reviewers, ' \
-                 'referencing what was changed in the original source commit.'
-        else
-          base
-        end
+        return base + commit_pull_request_prompt if delivery_method == 'pull_request'
+
+        base
+      end
+
+      def commit_pull_request_prompt
+        "\n\nAlso write a pull request title and description. " \
+          'The PR title should be short and action-oriented. ' \
+          'The PR description should summarize the changes and provide context for reviewers, ' \
+          'referencing what was changed in the original source commit.'
       end
 
       def commit_tool(delivery_method)
-        if delivery_method == 'pull_request'
-          {
-            type: 'function',
-            function: {
-              name: 'pull_request_commit',
-              description: 'Return the commit message, PR title, and PR description for the translation changes.',
-              parameters: {
-                type: 'object',
-                properties: {
-                  commit_message: {
-                    type: 'string',
-                    description: 'A concise commit message describing the translation changes.'
-                  },
-                  pr_title: {
-                    type: 'string',
-                    description: 'A short, action-oriented pull request title.'
-                  },
-                  pr_description: {
-                    type: 'string',
-                    description: 'A description summarizing the changes and providing context for reviewers.'
-                  }
+        return pull_request_commit_tool if delivery_method == 'pull_request'
+
+        push_commit_tool
+      end
+
+      def pull_request_commit_tool
+        {
+          type: 'function',
+          function: {
+            name: 'pull_request_commit',
+            description: 'Return the commit message, PR title, and PR description for the translation changes.',
+            parameters: {
+              type: 'object',
+              properties: {
+                commit_message: {
+                  type: 'string',
+                  description: 'A concise commit message describing the translation changes.'
                 },
-                required: %w[commit_message pr_title pr_description]
-              }
+                pr_title: {
+                  type: 'string',
+                  description: 'A short, action-oriented pull request title.'
+                },
+                pr_description: {
+                  type: 'string',
+                  description: 'A description summarizing the changes and providing context for reviewers.'
+                }
+              },
+              required: %w[commit_message pr_title pr_description]
             }
           }
-        else
-          {
-            type: 'function',
-            function: {
-              name: 'push_commit',
-              description: 'Return the commit message for the translation changes.',
-              parameters: {
-                type: 'object',
-                properties: {
-                  commit_message: {
-                    type: 'string',
-                    description: 'A concise commit message describing the translation changes.'
-                  }
-                },
-                required: ['commit_message']
-              }
+        }
+      end
+
+      def push_commit_tool
+        {
+          type: 'function',
+          function: {
+            name: 'push_commit',
+            description: 'Return the commit message for the translation changes.',
+            parameters: {
+              type: 'object',
+              properties: {
+                commit_message: {
+                  type: 'string',
+                  description: 'A concise commit message describing the translation changes.'
+                }
+              },
+              required: ['commit_message']
             }
           }
-        end
+        }
       end
 
       def validate_commit_content(parsed, delivery_method)
         raise 'Commit content is not a hash' unless parsed.is_a?(Hash)
 
-        unless parsed['commit_message'].is_a?(String) && !parsed['commit_message'].strip.empty?
-          raise 'Missing or empty commit_message'
-        end
+        raise 'Missing or empty commit_message' unless present_string?(parsed, 'commit_message')
 
         return unless delivery_method == 'pull_request'
 
-        raise 'Missing or empty pr_title' unless parsed['pr_title'].is_a?(String) && !parsed['pr_title'].strip.empty?
+        raise 'Missing or empty pr_title' unless present_string?(parsed, 'pr_title')
+        raise 'Missing or empty pr_description' unless present_string?(parsed, 'pr_description')
+      end
 
-        return if parsed['pr_description'].is_a?(String) && !parsed['pr_description'].strip.empty?
-
-        raise 'Missing or empty pr_description'
+      def present_string?(parsed, key)
+        value = parsed[key]
+        value.is_a?(String) && !value.strip.empty?
       end
     end
   end
