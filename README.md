@@ -102,6 +102,8 @@ These keys will still be auto-translated for other target locales not listed in 
 
 The action searches for the exceptions file starting from the source file's directory and walking up to the repository root.
 
+Exclusions hold a key back from translation only, never from pruning. If `marketing` was a string and has become the namespace `marketing.tagline`, listing `marketing.tagline` under `ja` means no run ever writes anything under `marketing`, so the leftover `marketing` string in `ja` is pruned instead of parked in the file as a dead entry. The stale string survives only while some other nested key of that namespace is translated for the locale, because that write rebuilds it.
+
 ## Development
 
 The Ruby version is declared once, in `.ruby-version`:
@@ -140,6 +142,7 @@ bundle install
 - The action expects the repo to be checked out with full history (`fetch-depth: 0`) so it can inspect diffs.
 - Target locale files are inferred by swapping the source locale filename (e.g. `en.json` -> `fr.json`).
 - Deleting a key from the source file prunes it from every target locale file on the next run, even when nothing needs translating.
+- The `Backfilled strings` a run logs names exactly the keys it queued for the engine, so a key the source holds as a hash, number or nil never appears there: no locale was ever asked to write that entry.
 - For `delivery_method: pull_request`, grant `pull-requests: write`; for `push`, `contents: write` is sufficient.
 - For `delivery_method: push`, check out a branch ref (not a detached HEAD) so the commit has a branch to land on.
 
