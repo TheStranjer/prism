@@ -213,15 +213,14 @@ module Prism
         existing_strings = locale_file.flattened_strings
         has_changes = false
 
-        (translations[locale] || {}).each do |key, translation|
+        translations_for_locale = translations[locale] || {}
+        translations_for_locale.each do |key, translation|
           has_changes = true if existing_strings[key] != translation
           locale_file.set_value(key, translation)
         end
 
         stale_keys = existing_strings.keys - source_strings.keys
-        stale_keys.each do |key|
-          has_changes = true if locale_file.remove_value(key)
-        end
+        has_changes = true if prune_stale_keys(locale_file, stale_keys, translations_for_locale.keys)
 
         next unless has_changes
 
@@ -231,6 +230,22 @@ module Prism
       end
 
       updated_paths
+    end
+
+    # Drops target keys the source no longer holds, and reports whether any went.
+    # A stale key that is a strict prefix of a key written by this same pass is a
+    # string in the target that the source has grown into a namespace: set_value
+    # already swapped that string for the freshly translated subtree, so removing
+    # the stale name here would delete the translation the run just paid for and
+    # leave the locale file without it until a later run backfilled the entry.
+    def prune_stale_keys(locale_file, stale_keys, written_keys)
+      removed = false
+      stale_keys.each do |key|
+        next if written_keys.any? { |written| written.start_with?("#{key}.") }
+
+        removed = true if locale_file.remove_value(key)
+      end
+      removed
     end
 
     def stale_keys_by_locale(source_strings, source_root = nil)
