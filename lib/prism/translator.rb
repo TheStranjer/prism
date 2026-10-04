@@ -291,14 +291,20 @@ module Prism
         requests[key] = { value: value, locales: locales }
       end
 
+      # The second value is what run logs as "Backfilled strings", so it holds
+      # exactly the keys handed to the engine here: a key the source holds as a
+      # hash, number or nil has no text to translate, no locale is asked for it,
+      # and logging it would send the next reader hunting an entry no run wrote.
+      backfilled_keys = []
       missing_locales_by_key.each do |key, locales|
         value = source_strings[key]
         next unless value.is_a?(String)
 
         requests[key] = { value: value, locales: locales }
+        backfilled_keys << key
       end
 
-      [requests, missing_locales_by_key.keys]
+      [requests, backfilled_keys]
     end
 
     def load_flattened_strings(path, locale, source_root = nil)

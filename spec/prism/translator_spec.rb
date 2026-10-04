@@ -527,6 +527,33 @@ RSpec.describe Prism::Translator do
     end
   end
 
+  # The backfilled list only names keys a locale was asked about, so a target file
+  # whose only gap is a key the source holds as a hash leaves the run with nothing
+  # to do: it stops as unchanged and never logs that key as backfilled.
+  it 'returns unchanged when the only missing keys have no translatable source value' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.json')
+      write_json(source_path, { 'greeting' => 'Hello' })
+      write_json(File.join(dir, 'locales/fr.json'), { 'greeting' => 'Bonjour' })
+
+      translator = build_translator(source_file: source_path, target_languages: ['fr'])
+
+      diff = instance_double(Prism::DiffExaminer, unchanged?: true, changed_strings: Prism::DiffExaminer::Result.new(
+        changed_strings: {},
+        source_locale_root: nil,
+        added_strings: {},
+        modified_strings: {},
+        source_strings: { 'greeting' => 'Hello', 'group' => { 'one' => 'One' } }
+      ))
+      allow(Prism::DiffExaminer).to receive(:new).and_return(diff)
+      allow(translator).to receive(:build_engine).and_return(instance_double(Prism::Engines::ChatGPT))
+      expect(translator).not_to receive(:validate_tokens)
+
+      expect(translator.run).to eq(:unchanged)
+      expect(logged_output).not_to include('Backfilled strings')
+    end
+  end
+
   describe 'pruning stale entries during a run' do
     def stub_push_delivery(translator)
       repo = translator.instance_variable_get(:@repo)
@@ -1617,12 +1644,16 @@ RSpec.describe Prism::Translator do
           source_locale_root: nil,
           added_strings: {},
           modified_strings: {},
-          source_strings: { 'greeting' => 'Hello', 'group' => { 'one' => 'One' } }
+          source_strings: { 'greeting' => 'Hello', 'group' => { 'one' => 'One' }, 'count' => 3, 'blank' => nil }
         )
 
-        requests, = translator.send(:build_translation_requests, result)
+        requests, backfilled = translator.send(:build_translation_requests, result)
 
         expect(requests.keys).to contain_exactly('greeting')
+        # A run logs the second value as "Backfilled strings", so it has to name the
+        # keys a locale was actually asked about: reporting a skipped key here would
+        # point the next reader at an entry no locale was ever asked to write.
+        expect(backfilled).to contain_exactly('greeting')
       end
     end
 
