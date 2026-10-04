@@ -246,37 +246,44 @@ module Prism
       root_key = result.source_locale_root
       source_strings = result.source_strings || {}
       stale_keys ||= stale_keys_by_locale(source_strings, root_key, translated_keys_by_locale(translations))
-      updated_paths = []
       shape_collisions = {}
-      target_locales.each do |locale|
-        target_path = LocaleFile.target_path_for(@source_file, locale)
-        format = target_path.end_with?('.json') ? :json : :yaml
-
-        data = load_target_data(target_path, format)
-
-        locale_file = LocaleFile.new(data, locale_hint: locale, source_root_key: root_key)
-        locale_file = ensure_root(locale_file, locale, root_key)
-
-        existing_strings = locale_file.flattened_strings
-        has_changes = false
-
-        translations_for_locale = translations.fetch(locale, {})
-        translations_for_locale.each do |key, translation|
-          has_changes = true if existing_strings[key] != translation
-          locale_file.set_value(key, translation)
-        end
-
-        has_changes = true if prune_stale_keys(locale_file, stale_keys.fetch(locale, []))
-        shape_collisions[locale] = locale_file.collisions unless locale_file.collisions.empty?
-
-        next unless has_changes
-
-        serialized = locale_file.to_serialized(format)
-        File.write(target_path, serialized)
-        updated_paths << target_path
+      updated_paths = target_locales.filter_map do |locale|
+        update_locale_file(locale, translations, stale_keys, root_key, shape_collisions)
       end
       log_shape_collisions(shape_collisions)
       updated_paths
+    end
+
+    def update_locale_file(locale, translations, stale_keys, root_key, shape_collisions)
+      target_path = LocaleFile.target_path_for(@source_file, locale)
+      format = target_path.end_with?('.json') ? :json : :yaml
+
+      locale_file = load_locale_file(target_path, format, locale, root_key)
+
+      has_changes = write_translations(locale_file, translations.fetch(locale, {}))
+      has_changes = true if prune_stale_keys(locale_file, stale_keys.fetch(locale, []))
+      shape_collisions[locale] = locale_file.collisions unless locale_file.collisions.empty?
+
+      return nil unless has_changes
+
+      File.write(target_path, locale_file.to_serialized(format))
+      target_path
+    end
+
+    def load_locale_file(target_path, format, locale, root_key)
+      data = load_target_data(target_path, format)
+      locale_file = LocaleFile.new(data, locale_hint: locale, source_root_key: root_key)
+      ensure_root(locale_file, locale, root_key)
+    end
+
+    def write_translations(locale_file, translations_for_locale)
+      existing_strings = locale_file.flattened_strings
+      has_changes = false
+      translations_for_locale.each do |key, translation|
+        has_changes = true if existing_strings[key] != translation
+        locale_file.set_value(key, translation)
+      end
+      has_changes
     end
 
     def log_shape_collisions(shape_collisions)
