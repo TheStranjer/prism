@@ -168,7 +168,7 @@ module Prism
     end
 
     def translate_strings(engine, requests)
-      translations = Hash.new { |hash, key| hash[key] = {} }
+      translations = {}
       failures = {}
 
       requests.each do |key, request|
@@ -183,7 +183,7 @@ module Prism
         locales.each do |locale|
           translation = result_translations[locale]
           if usable_translation?(translation)
-            translations[locale][key] = translation
+            record_translation(translations, locale, key, translation)
           else
             record_failure(failures, key, locale, result_errors)
           end
@@ -197,6 +197,11 @@ module Prism
 
     def usable_translation?(translation)
       translation.is_a?(String) && !translation.strip.empty?
+    end
+
+    def record_translation(translations, locale, key, translation)
+      translations[locale] ||= {}
+      translations[locale][key] = translation
     end
 
     def record_failure(failures, key, locale, errors)
@@ -255,13 +260,13 @@ module Prism
         existing_strings = locale_file.flattened_strings
         has_changes = false
 
-        translations_for_locale = translations[locale] || {}
+        translations_for_locale = translations.fetch(locale, {})
         translations_for_locale.each do |key, translation|
           has_changes = true if existing_strings[key] != translation
           locale_file.set_value(key, translation)
         end
 
-        has_changes = true if prune_stale_keys(locale_file, stale_keys[locale] || [])
+        has_changes = true if prune_stale_keys(locale_file, stale_keys.fetch(locale, []))
         shape_collisions[locale] = locale_file.collisions unless locale_file.collisions.empty?
 
         next unless has_changes
@@ -310,7 +315,7 @@ module Prism
     end
 
     def translated_keys_by_locale(translations)
-      target_locales.to_h { |locale| [locale, (translations[locale] || {}).keys] }
+      target_locales.to_h { |locale| [locale, translations.fetch(locale, {}).keys] }
     end
 
     def ensure_root(locale_file, locale, source_root)
@@ -325,7 +330,7 @@ module Prism
       source_root = result.source_locale_root
       changed_strings = result.changed_strings || {}
       changed_keys = Set.new(changed_strings.keys)
-      missing_locales_by_key = Hash.new { |hash, key| hash[key] = [] }
+      missing_locales_by_key = {}
 
       target_locales.each do |locale|
         target_path = LocaleFile.target_path_for(@source_file, locale)
@@ -335,7 +340,7 @@ module Prism
           next if target_strings.key?(key)
           next if exclusions_handler.excluded?(key, locale)
 
-          missing_locales_by_key[key] << locale
+          record_missing_locale(missing_locales_by_key, key, locale)
         end
       end
 
@@ -357,6 +362,11 @@ module Prism
       end
 
       [requests, backfilled_keys]
+    end
+
+    def record_missing_locale(missing_locales_by_key, key, locale)
+      missing_locales_by_key[key] ||= []
+      missing_locales_by_key[key] << locale
     end
 
     def load_target_data(target_path, format)
