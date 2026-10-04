@@ -281,6 +281,27 @@ RSpec.describe Prism::Translator do
     end
   end
 
+  it 'does not add a locale to the translations it is handed' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.json')
+      write_json(source_path, { 'greeting' => 'Hello' })
+      write_json(File.join(dir, 'locales/fr.json'), { 'greeting' => 'Bonjour' })
+
+      translator = build_translator(source_file: source_path, target_languages: %w[fr de])
+      result = Prism::DiffExaminer::Result.new(
+        source_locale_root: nil,
+        source_strings: { 'greeting' => 'Hello' }
+      )
+      translations = Hash.new { |hash, key| hash[key] = {} }
+      translations['fr'] = { 'greeting' => 'Bonjour' }
+
+      updated_paths = translator.send(:apply_translations, translations, result)
+
+      expect(updated_paths).to be_empty
+      expect(translations.keys).to eq(['fr'])
+    end
+  end
+
   it 'creates missing target files rooted with the target locale' do
     Dir.mktmpdir do |dir|
       source_path = File.join(dir, 'locales/en.json')
@@ -1461,6 +1482,17 @@ RSpec.describe Prism::Translator do
       translations = translator.send(:translate_strings, engine, requests)
 
       expect(translations).to eq({ 'fr' => { 'greeting' => 'Bonjour' }, 'de' => { 'greeting' => 'Hallo' } })
+    end
+
+    it 'answers a locale it never wrote as a miss that adds nothing to the result' do
+      translator = build_translator(source_file: 'locales/en.json', target_languages: %w[fr de])
+      engine = engine_returning({ 'translations' => { 'fr' => 'Bonjour' } })
+      requests = { 'greeting' => { value: 'Hello', locales: ['fr'] } }
+
+      translations = translator.send(:translate_strings, engine, requests)
+
+      expect(translations['de']).to be_nil
+      expect(translations).to eq({ 'fr' => { 'greeting' => 'Bonjour' } })
     end
 
     it 'raises and logs the per-locale reason when a locale comes back empty' do
