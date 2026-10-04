@@ -34,7 +34,8 @@ module Prism
       engine = build_engine
       result = diff.changed_strings
       requests, backfilled_keys = build_translation_requests(result)
-      stale_keys = stale_keys_by_locale(result.source_strings || {}, result.source_locale_root)
+      write_plan = write_plan_by_locale(requests)
+      stale_keys = stale_keys_by_locale(result.source_strings || {}, result.source_locale_root, write_plan)
       return :unchanged if unchanged && requests.empty? && backfilled_keys.empty? && stale_keys.empty?
       return :no_strings if requests.empty? && stale_keys.empty?
 
@@ -48,7 +49,7 @@ module Prism
 
       Logging.log("Translations: #{JSON.pretty_generate(translations)}")
 
-      updated_paths = apply_translations(translations, result)
+      updated_paths = apply_translations(translations, result, stale_keys)
       return :no_updates if updated_paths.empty?
 
       Logging.log("Updated locale files: #{JSON.pretty_generate(updated_paths)}")
@@ -236,9 +237,10 @@ module Prism
       existing_pr['number'] == created_pr['number']
     end
 
-    def apply_translations(translations, result)
+    def apply_translations(translations, result, stale_keys = nil)
       root_key = result.source_locale_root
       source_strings = result.source_strings || {}
+      stale_keys ||= stale_keys_by_locale(source_strings, root_key, translated_keys_by_locale(translations))
       updated_paths = []
       target_locales.each do |locale|
         target_path = LocaleFile.target_path_for(@source_file, locale)
@@ -258,8 +260,7 @@ module Prism
           locale_file.set_value(key, translation)
         end
 
-        stale_keys = existing_strings.keys - source_strings.keys
-        has_changes = true if prune_stale_keys(locale_file, stale_keys, translations_for_locale.keys)
+        has_changes = true if prune_stale_keys(locale_file, stale_keys[locale] || [])
 
         next unless has_changes
 
@@ -271,23 +272,39 @@ module Prism
       updated_paths
     end
 
-    def prune_stale_keys(locale_file, stale_keys, keys_written_this_pass)
+    def prune_stale_keys(locale_file, stale_keys)
       removed = false
       stale_keys.each do |key|
-        next if keys_written_this_pass.any? { |written| written.start_with?("#{key}.") }
-
         removed = true if locale_file.remove_value(key)
       end
       removed
     end
 
-    def stale_keys_by_locale(source_strings, source_root = nil)
+    def stale_keys_by_locale(source_strings, source_root = nil, keys_written_by_locale = {})
       target_locales.each_with_object({}) do |locale, stale|
         target_path = LocaleFile.target_path_for(@source_file, locale)
         target_strings = load_flattened_strings(target_path, locale, source_root)
-        stale_keys = target_strings.keys - source_strings.keys
-        stale[locale] = stale_keys unless stale_keys.empty?
+        keys = keys_to_prune(target_strings.keys, source_strings.keys, keys_written_by_locale[locale] || [])
+        stale[locale] = keys unless keys.empty?
       end
+    end
+
+    def keys_to_prune(target_keys, source_keys, keys_written_this_pass)
+      (target_keys - source_keys).reject { |key| rebuilt_by_writes?(key, keys_written_this_pass) }
+    end
+
+    def rebuilt_by_writes?(key, keys_written_this_pass)
+      keys_written_this_pass.any? { |written| written.start_with?("#{key}.") }
+    end
+
+    def write_plan_by_locale(requests)
+      target_locales.to_h do |locale|
+        [locale, requests.filter_map { |key, request| key if request[:locales].include?(locale) }]
+      end
+    end
+
+    def translated_keys_by_locale(translations)
+      target_locales.to_h { |locale| [locale, (translations[locale] || {}).keys] }
     end
 
     def ensure_root(locale_file, locale, source_root)

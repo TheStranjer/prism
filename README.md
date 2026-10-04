@@ -8,7 +8,7 @@ Auto-translate i18n JSON/YAML files when the source language changes. The action
 2. Extracts changed keys and their updated strings.
 3. Sends each updated string to the configured engine (ChatGPT today).
 4. Updates target locale files (JSON or YAML, with or without root locale).
-5. Prunes stale entries: keys present in a target locale file but no longer in the source file are removed.
+5. Prunes stale entries: keys present in a target locale file but no longer in the source file are removed, except a leftover string the same run rebuilds as a namespace.
 6. Commits the changes with either an LLM-generated message (if `llm_commit_messages: true`) or a default message.
 7. Creates a pull request with the translated changes (or pushes directly if configured).
 
@@ -143,6 +143,7 @@ bundle install
 - Target locale files are inferred by swapping the source locale filename (e.g. `en.json` -> `fr.json`).
 - Deleting a key from the source file prunes it from every target locale file on the next run, even when nothing needs translating.
 - The `Backfilled strings` a run logs names exactly the keys it queued for the engine, so a key the source holds as a hash, number or nil never appears there: no locale was ever asked to write that entry.
+- The `Stale keys` a run logs names exactly the entries it then removes, because the report and the pruning share one rule: a target string the source grew into a namespace is kept, and never logged, whenever that run writes one of its nested keys.
 - For `delivery_method: pull_request`, grant `pull-requests: write`; for `push`, `contents: write` is sufficient.
 - For `delivery_method: push`, check out a branch ref (not a detached HEAD) so the commit has a branch to land on.
 
