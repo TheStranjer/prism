@@ -19,10 +19,10 @@ module Prism
       File.join(dir, "#{target_locale}#{ext}")
     end
 
-    def initialize(data, locale_hint: nil)
+    def initialize(data, locale_hint: nil, source_root_key: nil)
       @data = data || {}
       @locale_hint = locale_hint
-      @root_key = detect_root_key(@data, locale_hint)
+      @root_key = detect_root_key(@data, locale_hint, source_root_key)
     end
 
     def flattened_strings
@@ -75,14 +75,21 @@ module Prism
 
     private
 
-    def detect_root_key(data, locale_hint)
+    # The root key is only trusted when it matches the file's locale hint or
+    # the root detected in the source file. A lone top-level key with a hash
+    # value is not enough on its own: a target file that only translated one
+    # section of the source (say {"checkout" => {...}}) is a rootless file
+    # whose keys are "checkout.*", not a locale-rooted file. Treating that
+    # namespace as a root would flatten its keys out of alignment with the
+    # source and make every entry look stale, so pruning would delete it.
+    def detect_root_key(data, locale_hint, source_root_key)
       return nil unless data.is_a?(Hash)
 
       return locale_hint if locale_hint && data.key?(locale_hint) && data[locale_hint].is_a?(Hash)
 
-      if data.keys.length == 1
-        only_key = data.keys.first
-        return only_key if data[only_key].is_a?(Hash)
+      if source_root_key && data.keys.length == 1 &&
+         data.key?(source_root_key) && data[source_root_key].is_a?(Hash)
+        return source_root_key
       end
 
       nil
