@@ -208,7 +208,6 @@ RSpec.describe Prism::Translator do
 
       translator = build_translator(source_file: source_path, target_languages: %w[fr de])
       original_fr = File.read(File.join(dir, 'locales/fr.json'))
-      File.read(File.join(dir, 'locales/de.json'))
 
       translations = {
         'fr' => { 'greeting' => 'Bonjour', 'title' => 'Appli' },
