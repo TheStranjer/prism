@@ -358,6 +358,50 @@ RSpec.describe Prism::Translator do
     end
   end
 
+  it 'reports every key it prunes and none of the keys it rebuilds when a string grows into a namespace' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.json')
+      write_json(source_path, { 'a' => { 'b' => 'Apple' } })
+      write_json(File.join(dir, 'locales/fr.json'), { 'a' => 'Ancien', 'gone' => 'Parti' })
+
+      translator = build_translator(source_file: source_path, target_languages: ['fr'])
+      result = Prism::DiffExaminer::Result.new(
+        source_locale_root: nil,
+        source_strings: { 'a.b' => 'Apple' }
+      )
+
+      stale = translator.send(:stale_keys_by_locale, result.source_strings, nil, { 'fr' => ['a.b'] })
+      expect(stale).to eq({ 'fr' => ['gone'] })
+
+      updated_paths = translator.send(:apply_translations, { 'fr' => { 'a.b' => 'Pomme' } }, result, stale)
+
+      expect(updated_paths).to contain_exactly(File.join(dir, 'locales/fr.json'))
+      expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({ 'a' => { 'b' => 'Pomme' } })
+    end
+  end
+
+  it 'reports the grown target string as stale when the pass writes no nested key for the locale' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.json')
+      write_json(source_path, { 'a' => { 'b' => 'Apple' } })
+      write_json(File.join(dir, 'locales/fr.json'), { 'a' => 'Ancien' })
+
+      translator = build_translator(source_file: source_path, target_languages: ['fr'])
+      result = Prism::DiffExaminer::Result.new(
+        source_locale_root: nil,
+        source_strings: { 'a.b' => 'Apple' }
+      )
+
+      stale = translator.send(:stale_keys_by_locale, result.source_strings, nil, { 'fr' => [] })
+      expect(stale).to eq({ 'fr' => ['a'] })
+
+      updated_paths = translator.send(:apply_translations, { 'fr' => {} }, result, stale)
+
+      expect(updated_paths).to contain_exactly(File.join(dir, 'locales/fr.json'))
+      expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({})
+    end
+  end
+
   it 'still prunes unrelated stale keys in a pass that grows a string into a namespace' do
     Dir.mktmpdir do |dir|
       source_path = File.join(dir, 'locales/en.json')
@@ -392,9 +436,11 @@ RSpec.describe Prism::Translator do
 
       requests, = translator.send(:build_translation_requests, result)
       expect(requests).to be_empty
-      expect(translator.send(:stale_keys_by_locale, result.source_strings)).to eq({ 'fr' => ['a'] })
+      stale = translator.send(:stale_keys_by_locale, result.source_strings, nil,
+                              translator.send(:write_plan_by_locale, requests))
+      expect(stale).to eq({ 'fr' => ['a'] })
 
-      updated_paths = translator.send(:apply_translations, {}, result)
+      updated_paths = translator.send(:apply_translations, {}, result, stale)
 
       expect(updated_paths).to contain_exactly(File.join(dir, 'locales/fr.json'))
       expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({})
@@ -418,7 +464,11 @@ RSpec.describe Prism::Translator do
       expect(requests.keys).to contain_exactly('a.c')
       expect(requests['a.c'][:locales]).to eq(['fr'])
 
-      updated_paths = translator.send(:apply_translations, { 'fr' => { 'a.c' => 'Cerise' } }, result)
+      stale = translator.send(:stale_keys_by_locale, result.source_strings, nil,
+                              translator.send(:write_plan_by_locale, requests))
+      expect(stale).to eq({})
+
+      updated_paths = translator.send(:apply_translations, { 'fr' => { 'a.c' => 'Cerise' } }, result, stale)
 
       expect(updated_paths).to contain_exactly(File.join(dir, 'locales/fr.json'))
       expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({ 'a' => { 'c' => 'Cerise' } })
@@ -675,7 +725,25 @@ RSpec.describe Prism::Translator do
         stub_push_delivery(translator)
 
         expect(translator.run).to eq(:pushed)
+        expect(logged_output).to include("Stale keys: #{JSON.pretty_generate({ 'fr' => ['a'] })}")
         expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({})
+      end
+    end
+
+    it 'leaves a key out of the stale report of a full run that rebuilds it as a namespace' do
+      Dir.mktmpdir do |dir|
+        source_path = File.join(dir, 'locales/en.json')
+        write_json(source_path, { 'a' => { 'b' => 'Apple' } })
+        write_json(File.join(dir, 'locales/fr.json'), { 'a' => 'Ancien', 'gone' => 'Parti' })
+
+        translator = build_translator(source_file: source_path, target_languages: ['fr'], delivery_method: 'push')
+        allow(Prism::DiffExaminer).to receive(:new).and_return(grown_namespace_diff(unchanged: true))
+        allow(translator).to receive(:translate_strings).and_return({ 'fr' => { 'a.b' => 'Pomme' } })
+        stub_push_delivery(translator)
+
+        expect(translator.run).to eq(:pushed)
+        expect(logged_output).to include("Stale keys: #{JSON.pretty_generate({ 'fr' => ['gone'] })}")
+        expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({ 'a' => { 'b' => 'Pomme' } })
       end
     end
   end
