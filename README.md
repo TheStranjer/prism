@@ -102,6 +102,29 @@ These keys will still be auto-translated for other target locales not listed in 
 
 The action searches for the exceptions file starting from the source file's directory and walking up to the repository root.
 
+## Development
+
+The Ruby version is declared once, in `.ruby-version`:
+
+- `action.yml` hands `.ruby-version` to `ruby/setup-ruby` (resolved relative to the action directory, not the calling repo), so the Ruby that serves translation traffic in consumer workflows is the pinned one.
+- `.github/workflows/ci.yml` does the same for the RuboCop and RSpec jobs, so CI and production agree.
+- `.rubocop.yml` leaves `TargetRubyVersion` unset, which makes RuboCop read `.ruby-version` as well.
+- `mise.toml` repeats the same version because the mise `ruby` plugin does not read `.ruby-version` on its own. Bump the two together.
+
+Run everything with `./local-tests.sh`, which runs RSpec and then RuboCop.
+
+### Installing gems for each Ruby
+
+Bundler installs into the gem home of whichever Ruby ran `bundle install`, so every interpreter on a machine needs its own install. When `mise install` adds a Ruby, or you switch versions, `bundle exec` fails with `Bundler::GemNotFound` even though `Gemfile.lock` is complete and correct. With the new Ruby active:
+
+```sh
+ruby -v          # confirm mise resolved the version you expect
+bundle install
+./local-tests.sh
+```
+
+`./local-tests.sh` runs `bundle check` first and prints this same instruction instead of letting Bundler fail in the middle of the suite.
+
 ## Notes
 
 - The action expects the repo to be checked out with full history (`fetch-depth: 0`) so it can inspect diffs.
