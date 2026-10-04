@@ -117,11 +117,16 @@ RSpec.describe Prism::Translator do
         'en' => { 'greeting' => 'Hi' },
         'fr' => { 'greeting' => 'Salut' }
       }
+      result = Prism::DiffExaminer::Result.new(
+        source_locale_root: nil,
+        source_strings: { 'greeting' => 'Hello' }
+      )
 
-      updated_paths = translator.send(:apply_translations, translations, nil)
+      updated_paths = translator.send(:apply_translations, translations, result)
 
       expect(updated_paths).to contain_exactly(File.join(dir, 'locales/fr.json'))
       expect(File.read(source_path)).to eq(original_source)
+      expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({ 'greeting' => 'Salut' })
     end
   end
 
@@ -140,11 +145,151 @@ RSpec.describe Prism::Translator do
         'fr' => { 'greeting' => 'Bonjour', 'title' => 'Appli' },
         'de' => { 'greeting' => 'Hallo', 'title' => 'App' }
       }
+      result = Prism::DiffExaminer::Result.new(
+        source_locale_root: nil,
+        source_strings: { 'greeting' => 'Hello', 'title' => 'App' }
+      )
 
-      updated_paths = translator.send(:apply_translations, translations, nil)
+      updated_paths = translator.send(:apply_translations, translations, result)
 
       expect(updated_paths).to contain_exactly(File.join(dir, 'locales/de.json'))
       expect(File.read(File.join(dir, 'locales/fr.json'))).to eq(original_fr)
+    end
+  end
+
+  it 'prunes entries missing from the source file while applying translations' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.json')
+      write_json(source_path, { 'greeting' => 'Hello', 'old' => { 'keep' => 'Keep' } })
+      write_json(File.join(dir, 'locales/fr.json'),
+                 { 'greeting' => 'Bonjour', 'gone' => 'Parti', 'old' => { 'deep' => 'Vieux', 'keep' => 'Garder' } })
+
+      translator = build_translator(source_file: source_path, target_languages: ['fr'])
+      result = Prism::DiffExaminer::Result.new(
+        source_locale_root: nil,
+        source_strings: { 'greeting' => 'Hello', 'old.keep' => 'Keep' }
+      )
+
+      updated_paths = translator.send(:apply_translations, { 'fr' => { 'greeting' => 'Salut' } }, result)
+
+      expect(updated_paths).to contain_exactly(File.join(dir, 'locales/fr.json'))
+      expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json'))))
+        .to eq({ 'greeting' => 'Salut', 'old' => { 'keep' => 'Garder' } })
+    end
+  end
+
+  it 'writes target files that only need stale entries removed' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.json')
+      write_json(source_path, { 'greeting' => 'Hello' })
+      write_json(File.join(dir, 'locales/fr.json'), { 'greeting' => 'Bonjour', 'gone' => 'Parti' })
+      write_json(File.join(dir, 'locales/de.json'), { 'greeting' => 'Hallo' })
+
+      translator = build_translator(source_file: source_path, target_languages: %w[fr de])
+      original_de = File.read(File.join(dir, 'locales/de.json'))
+      result = Prism::DiffExaminer::Result.new(
+        source_locale_root: nil,
+        source_strings: { 'greeting' => 'Hello' }
+      )
+
+      updated_paths = translator.send(:apply_translations, { 'fr' => { 'greeting' => 'Bonjour' } }, result)
+
+      expect(updated_paths).to contain_exactly(File.join(dir, 'locales/fr.json'))
+      expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({ 'greeting' => 'Bonjour' })
+      expect(File.read(File.join(dir, 'locales/de.json'))).to eq(original_de)
+    end
+  end
+
+  it 'does not create target files when there are no translations and nothing to prune' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.json')
+      write_json(source_path, { 'greeting' => 'Hello' })
+
+      translator = build_translator(source_file: source_path, target_languages: ['fr'])
+      result = Prism::DiffExaminer::Result.new(
+        source_locale_root: nil,
+        source_strings: { 'greeting' => 'Hello' }
+      )
+
+      updated_paths = translator.send(:apply_translations, {}, result)
+
+      expect(updated_paths).to be_empty
+      expect(File.exist?(File.join(dir, 'locales/fr.json'))).to be(false)
+    end
+  end
+
+  it 'creates missing target files rooted with the target locale' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.json')
+      write_json(source_path, { 'en' => { 'greeting' => 'Hello' } })
+
+      translator = build_translator(source_file: source_path, target_languages: ['fr'])
+      result = Prism::DiffExaminer::Result.new(
+        source_locale_root: 'en',
+        source_strings: { 'greeting' => 'Hello' }
+      )
+
+      updated_paths = translator.send(:apply_translations, { 'fr' => { 'greeting' => 'Bonjour' } }, result)
+
+      expect(updated_paths).to contain_exactly(File.join(dir, 'locales/fr.json'))
+      expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({ 'fr' => { 'greeting' => 'Bonjour' } })
+    end
+  end
+
+  it 'prunes stale keys from YAML locale files' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.yml')
+      fr_path = File.join(dir, 'locales/fr.yml')
+      FileUtils.mkdir_p(File.dirname(source_path))
+      File.write(source_path, YAML.dump({ 'en' => { 'greeting' => 'Hello' } }))
+      File.write(fr_path, YAML.dump({ 'fr' => { 'greeting' => 'Bonjour', 'gone' => 'Parti' } }))
+
+      translator = build_translator(source_file: source_path, target_languages: ['fr'])
+      result = Prism::DiffExaminer::Result.new(
+        source_locale_root: 'en',
+        source_strings: { 'greeting' => 'Hello' }
+      )
+
+      updated_paths = translator.send(:apply_translations, { 'fr' => {} }, result)
+
+      expect(updated_paths).to contain_exactly(fr_path)
+      expect(YAML.safe_load_file(fr_path)).to eq({ 'fr' => { 'greeting' => 'Bonjour' } })
+    end
+  end
+
+  it 'overwrites a stale nested target subtree when the source key becomes a string' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.json')
+      write_json(source_path, { 'a' => 'Apple', 'keep' => 'Keep' })
+      write_json(File.join(dir, 'locales/fr.json'), { 'a' => { 'b' => 'Ameise' }, 'keep' => 'Gardé' })
+
+      translator = build_translator(source_file: source_path, target_languages: ['fr'])
+      result = Prism::DiffExaminer::Result.new(
+        source_locale_root: nil,
+        source_strings: { 'a' => 'Apple', 'keep' => 'Keep' }
+      )
+
+      updated_paths = translator.send(:apply_translations, { 'fr' => { 'a' => 'Pomme' } }, result)
+
+      expect(updated_paths).to contain_exactly(File.join(dir, 'locales/fr.json'))
+      expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json'))))
+        .to eq({ 'a' => 'Pomme', 'keep' => 'Gardé' })
+    end
+  end
+
+  it 'collects stale keys per target locale' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.json')
+      write_json(source_path, { 'greeting' => 'Hello', 'keep' => 'Kept' })
+      write_json(File.join(dir, 'locales/fr.json'),
+                 { 'greeting' => 'Bonjour', 'gone' => 'Parti', 'nested' => { 'deep' => 'Nid' } })
+      write_json(File.join(dir, 'locales/de.json'), { 'greeting' => 'Hallo', 'keep' => 'Behalten' })
+
+      translator = build_translator(source_file: source_path, target_languages: %w[fr de es])
+
+      stale = translator.send(:stale_keys_by_locale, { 'greeting' => 'Hello', 'keep' => 'Kept' })
+
+      expect(stale).to eq({ 'fr' => ['gone', 'nested.deep'] })
     end
   end
 
@@ -173,6 +318,122 @@ RSpec.describe Prism::Translator do
       result = translator.run
 
       expect(result).to eq(:no_updates)
+    end
+  end
+
+  it 'returns unchanged when the source did not change and no target entries are stale' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.json')
+      write_json(source_path, { 'greeting' => 'Hello' })
+      write_json(File.join(dir, 'locales/fr.json'), { 'greeting' => 'Bonjour' })
+
+      translator = build_translator(source_file: source_path, target_languages: ['fr'])
+
+      diff = instance_double(Prism::DiffExaminer, unchanged?: true, changed_strings: Prism::DiffExaminer::Result.new(
+        changed_strings: {},
+        source_locale_root: nil,
+        added_strings: {},
+        modified_strings: {},
+        source_strings: { 'greeting' => 'Hello' }
+      ))
+      allow(Prism::DiffExaminer).to receive(:new).and_return(diff)
+      allow(translator).to receive(:build_engine).and_return(instance_double(Prism::Engines::ChatGPT))
+      expect(translator).not_to receive(:validate_tokens)
+
+      expect(translator.run).to eq(:unchanged)
+    end
+  end
+
+  it 'returns no_strings when there are no translation requests and nothing stale' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.json')
+      write_json(source_path, { 'greeting' => 'Hello' })
+      write_json(File.join(dir, 'locales/fr.json'), { 'greeting' => 'Bonjour' })
+
+      translator = build_translator(source_file: source_path, target_languages: ['fr'])
+
+      diff = instance_double(Prism::DiffExaminer, unchanged?: false, changed_strings: Prism::DiffExaminer::Result.new(
+        changed_strings: {},
+        source_locale_root: nil,
+        added_strings: {},
+        modified_strings: {},
+        source_strings: { 'greeting' => 'Hello' }
+      ))
+      allow(Prism::DiffExaminer).to receive(:new).and_return(diff)
+      allow(translator).to receive(:build_engine).and_return(instance_double(Prism::Engines::ChatGPT))
+      expect(translator).not_to receive(:validate_tokens)
+
+      expect(translator.run).to eq(:no_strings)
+    end
+  end
+
+  describe 'pruning stale entries during a run' do
+    def stub_push_delivery(translator)
+      repo = translator.instance_variable_get(:@repo)
+
+      engine = instance_double(Prism::Engines::ChatGPT)
+      allow(engine).to receive(:validate_token).and_return(true)
+      expect(engine).not_to receive(:get_translations)
+      allow(translator).to receive(:build_engine).and_return(engine)
+      allow(translator).to receive(:with_token_remote).and_yield('origin')
+
+      github_client = instance_double(Prism::GitHubClient)
+      allow(Prism::GitHubClient).to receive(:new).with(token: 'gh', repo_slug: 'org/repo').and_return(github_client)
+      allow(github_client).to receive(:validate_token_with_reason).and_return({ valid: true, reason: nil })
+
+      allow(repo).to receive(:set_identity)
+      allow(repo).to receive(:current_branch).and_return('main')
+      allow(repo).to receive(:add)
+      allow(repo).to receive(:staged_diff).and_return('diff --git a/locales/fr.json')
+      allow(repo).to receive(:head_sha).and_return('old', 'new')
+      allow(repo).to receive(:changed_files).and_return(['locales/fr.json'])
+      allow(repo).to receive(:relative_path).and_return('locales/fr.json')
+      allow(repo).to receive(:commit).with('Update translations')
+                 .and_return(['ok', instance_double(Process::Status, success?: true)])
+      expect(repo).to receive(:push).with('main',
+                                          remote: 'origin').and_return(['ok',
+                                                                        instance_double(Process::Status,
+                                                                                        success?: true)])
+    end
+
+    def prune_diff(unchanged:)
+      instance_double(Prism::DiffExaminer, unchanged?: unchanged, changed_strings: Prism::DiffExaminer::Result.new(
+        changed_strings: {},
+        source_locale_root: nil,
+        added_strings: {},
+        modified_strings: {},
+        source_strings: { 'greeting' => 'Hello' }
+      ))
+    end
+
+    it 'prunes target entries after a deletion-only source change' do
+      Dir.mktmpdir do |dir|
+        source_path = File.join(dir, 'locales/en.json')
+        write_json(source_path, { 'greeting' => 'Hello' })
+        write_json(File.join(dir, 'locales/fr.json'), { 'greeting' => 'Bonjour', 'gone' => 'Parti' })
+
+        translator = build_translator(source_file: source_path, target_languages: ['fr'], delivery_method: 'push')
+        allow(Prism::DiffExaminer).to receive(:new).and_return(prune_diff(unchanged: false))
+        stub_push_delivery(translator)
+
+        expect(translator.run).to eq(:pushed)
+        expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({ 'greeting' => 'Bonjour' })
+      end
+    end
+
+    it 'prunes target entries when the source file itself is unchanged' do
+      Dir.mktmpdir do |dir|
+        source_path = File.join(dir, 'locales/en.json')
+        write_json(source_path, { 'greeting' => 'Hello' })
+        write_json(File.join(dir, 'locales/fr.json'), { 'greeting' => 'Bonjour', 'gone' => 'Parti' })
+
+        translator = build_translator(source_file: source_path, target_languages: ['fr'], delivery_method: 'push')
+        allow(Prism::DiffExaminer).to receive(:new).and_return(prune_diff(unchanged: true))
+        stub_push_delivery(translator)
+
+        expect(translator.run).to eq(:pushed)
+        expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({ 'greeting' => 'Bonjour' })
+      end
     end
   end
 

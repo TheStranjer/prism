@@ -75,7 +75,7 @@ case result
 when :unchanged
   puts 'No changes detected in source locale file.'
 when :no_strings
-  puts 'No translatable string changes detected.'
+  puts 'No translatable string changes or stale keys detected.'
 when :no_updates
   puts 'No translations applied.'
 else

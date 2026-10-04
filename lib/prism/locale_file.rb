@@ -41,6 +41,30 @@ module Prism
       cursor[keys.last] = value
     end
 
+    def remove_value(path)
+      keys = path.split('.')
+      root = root_key ? @data[root_key] : @data
+      return nil unless root.is_a?(Hash)
+
+      cursor = root
+      parents = []
+      keys[0..-2].each do |key|
+        return nil unless cursor[key].is_a?(Hash)
+
+        parents << [cursor, key]
+        cursor = cursor[key]
+      end
+      return nil unless cursor.key?(keys.last)
+
+      removed = cursor.delete(keys.last)
+      parents.reverse_each do |hash, key|
+        break unless hash[key].is_a?(Hash) && hash[key].empty?
+
+        hash.delete(key)
+      end
+      removed
+    end
+
     def to_serialized(format)
       if format == :json
         JSON.pretty_generate(@data)
