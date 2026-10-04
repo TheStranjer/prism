@@ -349,6 +349,50 @@ RSpec.describe Prism::Translator do
     end
   end
 
+  # The mirror image of the example above: the target holds a string at "a"
+  # while the source has grown a namespace under it. Pruning runs after the
+  # writes, so the stale key names the very subtree the pass just translated.
+  # Removing it would ship the file without the translation that was paid for.
+  it 'keeps a fresh target subtree when the source string becomes a namespace' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.json')
+      write_json(source_path, { 'a' => { 'b' => 'Apple' }, 'keep' => 'Keep' })
+      write_json(File.join(dir, 'locales/fr.json'), { 'a' => 'Ancien' })
+
+      translator = build_translator(source_file: source_path, target_languages: ['fr'])
+      result = Prism::DiffExaminer::Result.new(
+        source_locale_root: nil,
+        source_strings: { 'a.b' => 'Apple', 'keep' => 'Keep' }
+      )
+
+      updated_paths = translator.send(:apply_translations, { 'fr' => { 'a.b' => 'Pomme' } }, result)
+
+      expect(updated_paths).to contain_exactly(File.join(dir, 'locales/fr.json'))
+      expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({ 'a' => { 'b' => 'Pomme' } })
+    end
+  end
+
+  # Guarding the fresh subtree must not switch pruning off for the rest of the
+  # file: the unrelated stale entry next to it still goes.
+  it 'still prunes unrelated stale keys in a pass that grows a string into a namespace' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.json')
+      write_json(source_path, { 'a' => { 'b' => 'Apple' } })
+      write_json(File.join(dir, 'locales/fr.json'), { 'a' => 'Ancien', 'gone' => 'Parti' })
+
+      translator = build_translator(source_file: source_path, target_languages: ['fr'])
+      result = Prism::DiffExaminer::Result.new(
+        source_locale_root: nil,
+        source_strings: { 'a.b' => 'Apple' }
+      )
+
+      updated_paths = translator.send(:apply_translations, { 'fr' => { 'a.b' => 'Pomme' } }, result)
+
+      expect(updated_paths).to contain_exactly(File.join(dir, 'locales/fr.json'))
+      expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({ 'a' => { 'b' => 'Pomme' } })
+    end
+  end
+
   it 'keeps a target file whose translations sit under a single shared namespace' do
     Dir.mktmpdir do |dir|
       source_path = File.join(dir, 'locales/en.json')
