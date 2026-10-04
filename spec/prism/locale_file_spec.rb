@@ -18,6 +18,36 @@ RSpec.describe Prism::LocaleFile do
     expect(locale.to_serialized(:json)).to include('Homepage')
   end
 
+  describe '#detect_root_key' do
+    it 'ignores a lone top-level key that matches neither the locale hint nor the source root' do
+      locale = described_class.new({ 'a' => { 'b' => 'Ameise' } }, locale_hint: 'fr')
+
+      expect(locale.root_key).to be_nil
+      expect(locale.flattened_strings).to eq({ 'a.b' => 'Ameise' })
+    end
+
+    it 'accepts a lone top-level key matching the locale hint' do
+      locale = described_class.new({ 'fr' => { 'b' => 'Ameise' } }, locale_hint: 'fr')
+
+      expect(locale.root_key).to eq('fr')
+      expect(locale.flattened_strings).to eq({ 'b' => 'Ameise' })
+    end
+
+    it 'accepts a lone top-level key matching the source file root' do
+      locale = described_class.new({ 'en' => { 'greeting' => 'Bonjour' } }, locale_hint: 'fr', source_root_key: 'en')
+
+      expect(locale.root_key).to eq('en')
+      expect(locale.flattened_strings).to eq({ 'greeting' => 'Bonjour' })
+    end
+
+    it 'still rejects the source root key when the value is not a hash' do
+      locale = described_class.new({ 'en' => 'Bonjour' }, locale_hint: 'fr', source_root_key: 'en')
+
+      expect(locale.root_key).to be_nil
+      expect(locale.flattened_strings).to eq({ 'en' => 'Bonjour' })
+    end
+  end
+
   describe '#remove_value' do
     it 'removes a top-level key and returns the removed value' do
       locale = described_class.new({ 'greeting' => 'Hello', 'stale' => 'Old' })

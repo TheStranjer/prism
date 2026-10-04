@@ -31,7 +31,7 @@ module Prism
       engine = build_engine
       result = diff.changed_strings
       requests, backfilled_keys = build_translation_requests(result)
-      stale_keys = stale_keys_by_locale(result.source_strings || {})
+      stale_keys = stale_keys_by_locale(result.source_strings || {}, result.source_locale_root)
       return :unchanged if unchanged && requests.empty? && backfilled_keys.empty? && stale_keys.empty?
       return :no_strings if requests.empty? && stale_keys.empty?
 
@@ -207,7 +207,7 @@ module Prism
                  {}
                end
 
-        locale_file = LocaleFile.new(data, locale_hint: locale)
+        locale_file = LocaleFile.new(data, locale_hint: locale, source_root_key: root_key)
         locale_file = ensure_root(locale_file, locale, root_key)
 
         existing_strings = locale_file.flattened_strings
@@ -233,10 +233,10 @@ module Prism
       updated_paths
     end
 
-    def stale_keys_by_locale(source_strings)
+    def stale_keys_by_locale(source_strings, source_root = nil)
       target_locales.each_with_object({}) do |locale, stale|
         target_path = LocaleFile.target_path_for(@source_file, locale)
-        target_strings = load_flattened_strings(target_path, locale)
+        target_strings = load_flattened_strings(target_path, locale, source_root)
         stale_keys = target_strings.keys - source_strings.keys
         stale[locale] = stale_keys unless stale_keys.empty?
       end
@@ -251,13 +251,14 @@ module Prism
 
     def build_translation_requests(result)
       source_strings = result.source_strings || {}
+      source_root = result.source_locale_root
       changed_strings = result.changed_strings || {}
       changed_keys = Set.new(changed_strings.keys)
       missing_locales_by_key = Hash.new { |hash, key| hash[key] = [] }
 
       target_locales.each do |locale|
         target_path = LocaleFile.target_path_for(@source_file, locale)
-        target_strings = load_flattened_strings(target_path, locale)
+        target_strings = load_flattened_strings(target_path, locale, source_root)
         source_strings.each_key do |key|
           next if changed_keys.include?(key)
           next if target_strings.key?(key)
@@ -285,7 +286,7 @@ module Prism
       [requests, missing_locales_by_key.keys]
     end
 
-    def load_flattened_strings(path, locale)
+    def load_flattened_strings(path, locale, source_root = nil)
       return {} unless File.exist?(path)
 
       content = File.read(path)
@@ -295,7 +296,7 @@ module Prism
                YAML.safe_load(content, aliases: true) || {}
              end
 
-      LocaleFile.new(data, locale_hint: locale).flattened_strings
+      LocaleFile.new(data, locale_hint: locale, source_root_key: source_root).flattened_strings
     end
 
     def source_locale

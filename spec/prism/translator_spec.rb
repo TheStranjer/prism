@@ -257,11 +257,15 @@ RSpec.describe Prism::Translator do
     end
   end
 
+  # The target file here holds its only translation under a lone top-level
+  # namespace ("a"). That key must not be mistaken for a locale root: the
+  # stale hash subtree is replaced by the new string value instead of being
+  # flattened against a bogus root and pruned away.
   it 'overwrites a stale nested target subtree when the source key becomes a string' do
     Dir.mktmpdir do |dir|
       source_path = File.join(dir, 'locales/en.json')
       write_json(source_path, { 'a' => 'Apple', 'keep' => 'Keep' })
-      write_json(File.join(dir, 'locales/fr.json'), { 'a' => { 'b' => 'Ameise' }, 'keep' => 'Gardé' })
+      write_json(File.join(dir, 'locales/fr.json'), { 'a' => { 'b' => 'Ameise' } })
 
       translator = build_translator(source_file: source_path, target_languages: ['fr'])
       result = Prism::DiffExaminer::Result.new(
@@ -272,8 +276,52 @@ RSpec.describe Prism::Translator do
       updated_paths = translator.send(:apply_translations, { 'fr' => { 'a' => 'Pomme' } }, result)
 
       expect(updated_paths).to contain_exactly(File.join(dir, 'locales/fr.json'))
+      expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({ 'a' => 'Pomme' })
+    end
+  end
+
+  it 'keeps a target file whose translations sit under a single shared namespace' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.json')
+      write_json(source_path, { 'checkout' => { 'title' => 'Checkout', 'confirm' => 'Confirm' }, 'misc' => 'Misc' })
+      write_json(File.join(dir, 'locales/fr.json'), { 'checkout' => { 'title' => 'Commander' } })
+
+      translator = build_translator(source_file: source_path, target_languages: ['fr'])
+      result = Prism::DiffExaminer::Result.new(
+        source_locale_root: nil,
+        source_strings: { 'checkout.title' => 'Checkout', 'checkout.confirm' => 'Confirm', 'misc' => 'Misc' }
+      )
+
+      stale = translator.send(:stale_keys_by_locale, result.source_strings)
+      expect(stale).to eq({})
+
+      updated_paths = translator.send(:apply_translations, {}, result)
+
+      expect(updated_paths).to be_empty
       expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json'))))
-        .to eq({ 'a' => 'Pomme', 'keep' => 'Gardé' })
+        .to eq({ 'checkout' => { 'title' => 'Commander' } })
+    end
+  end
+
+  it 'reads a target file that reuses the source root key' do
+    Dir.mktmpdir do |dir|
+      source_path = File.join(dir, 'locales/en.json')
+      write_json(source_path, { 'en' => { 'greeting' => 'Hello', 'gone' => 'Old' } })
+      write_json(File.join(dir, 'locales/fr.json'), { 'en' => { 'greeting' => 'Bonjour' } })
+
+      translator = build_translator(source_file: source_path, target_languages: ['fr'])
+      result = Prism::DiffExaminer::Result.new(
+        source_locale_root: 'en',
+        source_strings: { 'greeting' => 'Hello' }
+      )
+
+      stale = translator.send(:stale_keys_by_locale, result.source_strings, 'en')
+      expect(stale).to eq({})
+
+      updated_paths = translator.send(:apply_translations, { 'fr' => { 'greeting' => 'Bonjour' } }, result)
+
+      expect(updated_paths).to be_empty
+      expect(JSON.parse(File.read(File.join(dir, 'locales/fr.json')))).to eq({ 'en' => { 'greeting' => 'Bonjour' } })
     end
   end
 
